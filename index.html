@@ -118,21 +118,33 @@
 
 <script>
 /* ============================================================
-   NSL Intelligence Feed v6
+   NSL Intelligence Feed v5
    ============================================================
-   PROXY:    Cloudflare Worker (nsl-proxy.haydenmterjeson.workers.dev)
-   SEARCH:   Bing News RSS
-   COMPANY:  All 4 pages of nearspacelabs.com/press + Bing queries
-   VERTICALS: Curated trade-publication RSS feeds + targeted Bing News
+   PROXY:    Cloudflare Worker (private, no rate limits)
+   SEARCH:   Bing News RSS (Google News blocks Cloudflare IPs)
+   COMPANY:  Direct scrape of nearspacelabs.com/press
+   VERTICALS: Curated trade-publication RSS feeds
+
+   Six target verticals (per nearspacelabs.com):
+     P&C Insurance · State & Local Government · Energy & Utilities
+     Forestry & Environment · Mapping Technology · Roofing & Home Services
+
+   Direct competitors:
+     Aerial/HAPS:  Nearmap, EagleView, Vexcel
+     Satellite:    Planet Labs, Maxar, BlackSky, Satellogic
+     Drone:        Zeitview (formerly DroneBase), DroneDeploy
    ============================================================ */
 
+// ---------- CONFIG ----------
 const PROXY_BASE = 'https://nsl-proxy.haydenmterjeson.workers.dev/?url=';
-const CACHE_KEY = 'nsl_feed_cache_v6';
+const CACHE_KEY = 'nsl_feed_cache_v5';
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 12000;
 const BATCH_SIZE = 12;
-const MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000; // 365 days for NSL press history; per-tag override below
+const MAX_AGE_MS = 120 * 24 * 60 * 60 * 1000; // 120 days
 
+// Soft relevance terms — applied only to broad vertical Bing News queries
+// (not to company/competitor name queries — the name match IS the signal).
 const RELEVANCE_TERMS = [
   'aerial', 'satellite', 'geospatial', 'imagery', 'remote sensing',
   'earth observation', 'drone', 'uav', 'lidar', 'gis', 'mapping',
@@ -150,62 +162,58 @@ const RELEVANCE_TERMS = [
 
 const FEEDS = [
   // ============================================================
-  // NEAR SPACE LABS
+  // NEAR SPACE LABS — direct from their press page + name searches
   // ============================================================
   {
     id: 'nsl',
     label: 'Near Space Labs',
     color: '#CC6847', bg: '#FDF2EC',
     sources: [
-      // Authoritative: scrape all 4 pages of NSL's curated press list
-      { type: 'nsl_press', url: 'https://www.nearspacelabs.com/press',        tag: 'company_press' },
-      { type: 'nsl_press', url: 'https://www.nearspacelabs.com/press?d312efb0_page=2', tag: 'company_press' },
-      { type: 'nsl_press', url: 'https://www.nearspacelabs.com/press?d312efb0_page=3', tag: 'company_press' },
-      { type: 'nsl_press', url: 'https://www.nearspacelabs.com/press?d312efb0_page=4', tag: 'company_press' },
-      // Bing News searches — multiple angles to catch coverage that doesn't
-      // use the exact "Near Space Labs" phrase
-      { type: 'bing', query: '"Near Space Labs"',                        tag: 'company' },
-      { type: 'bing', query: '"Near Space Labs" stratospheric',          tag: 'company' },
-      { type: 'bing', query: '"Near Space Labs" Swift balloon',          tag: 'company' },
-      { type: 'bing', query: '"Near Space Labs" insurance',              tag: 'company' },
-      { type: 'bing', query: '"Near Space Labs" imagery',                tag: 'company' },
-      { type: 'bing', query: '"Rema Matevosyan"',                        tag: 'company' },
-      { type: 'bing', query: 'stratospheric balloon aerial imagery 7cm', tag: 'company' },
+      // Authoritative: scrape NSL's own press page (HTML, parsed below)
+      { type: 'nsl_press', url: 'https://www.nearspacelabs.com/press', tag: 'company' },
+      // Bing News searches for company mentions
+      { type: 'bing', query: '"Near Space Labs"', tag: 'company' },
+      { type: 'bing', query: '"Near Space Labs" stratospheric', tag: 'company' },
+      { type: 'bing', query: '"Near Space Labs" Swift balloon', tag: 'company' },
+      { type: 'bing', query: '"Rema Matevosyan"', tag: 'company' },
     ]
   },
 
   // ============================================================
-  // COMPETITORS
+  // COMPETITORS — one query per named competitor
   // ============================================================
   {
     id: 'competitors',
     label: 'Competitors',
     color: '#5C4E44', bg: '#F5F0E8',
     sources: [
-      { type: 'bing', query: '"Nearmap"',         tag: 'competitor' },
-      { type: 'bing', query: '"EagleView"',       tag: 'competitor' },
-      { type: 'bing', query: '"Vexcel Imaging"',  tag: 'competitor' },
-      { type: 'bing', query: '"Planet Labs"',     tag: 'competitor' },
-      { type: 'bing', query: '"Maxar" imagery',   tag: 'competitor' },
-      { type: 'bing', query: '"BlackSky"',        tag: 'competitor' },
-      { type: 'bing', query: '"Satellogic"',      tag: 'competitor' },
-      { type: 'bing', query: '"Zeitview"',        tag: 'competitor' },
-      { type: 'bing', query: '"DroneDeploy"',     tag: 'competitor' },
+      // Aerial / HAPS competitors
+      { type: 'bing', query: '"Nearmap"', tag: 'competitor' },
+      { type: 'bing', query: '"EagleView"', tag: 'competitor' },
+      { type: 'bing', query: '"Vexcel Imaging"', tag: 'competitor' },
+      // Satellite operators
+      { type: 'bing', query: '"Planet Labs"', tag: 'competitor' },
+      { type: 'bing', query: '"Maxar" imagery', tag: 'competitor' },
+      { type: 'bing', query: '"BlackSky"', tag: 'competitor' },
+      { type: 'bing', query: '"Satellogic"', tag: 'competitor' },
+      // Drone imagery
+      { type: 'bing', query: '"Zeitview"', tag: 'competitor' },
+      { type: 'bing', query: '"DroneDeploy"', tag: 'competitor' },
     ]
   },
 
   // ============================================================
-  // INDUSTRY (hidden)
+  // INDUSTRY (hidden) — feeds into All only
   // ============================================================
   {
     id: 'industry',
     label: 'Industry', hidden: true,
     color: '#3B6E8A', bg: '#EFF6FB',
     sources: [
-      { type: 'rss', url: 'https://geospatialworld.net/feed/',          tag: 'curated' },
-      { type: 'rss', url: 'https://www.gim-international.com/rss.xml',  tag: 'curated' },
-      { type: 'bing', query: '"earth observation" commercial imagery',  tag: 'vertical' },
-      { type: 'bing', query: 'geospatial intelligence remote sensing',  tag: 'vertical' },
+      { type: 'rss', url: 'https://geospatialworld.net/feed/', tag: 'curated' },
+      { type: 'rss', url: 'https://www.gim-international.com/rss.xml', tag: 'curated' },
+      { type: 'bing', query: '"earth observation" commercial imagery', tag: 'vertical' },
+      { type: 'bing', query: 'geospatial intelligence remote sensing', tag: 'vertical' },
     ]
   },
 
@@ -217,11 +225,11 @@ const FEEDS = [
     label: 'P&C Insurance',
     color: '#2E6B50', bg: '#EDFAF4',
     sources: [
-      { type: 'rss', url: 'https://insuranceinnovationreporter.com/feed/',   tag: 'curated' },
+      { type: 'rss', url: 'https://insuranceinnovationreporter.com/feed/', tag: 'curated' },
       { type: 'bing', query: 'property insurance aerial imagery underwriting', tag: 'vertical' },
-      { type: 'bing', query: 'homeowners insurance satellite imagery',         tag: 'vertical' },
-      { type: 'bing', query: 'catastrophe modeling property risk imagery',     tag: 'vertical' },
-      { type: 'bing', query: 'insurance roof inspection aerial',               tag: 'vertical' },
+      { type: 'bing', query: 'homeowners insurance satellite imagery', tag: 'vertical' },
+      { type: 'bing', query: 'catastrophe modeling property risk imagery', tag: 'vertical' },
+      { type: 'bing', query: 'insurance roof inspection aerial', tag: 'vertical' },
     ]
   },
 
@@ -233,10 +241,10 @@ const FEEDS = [
     label: 'State & Local Gov',
     color: '#7A2020', bg: '#FDF0F0',
     sources: [
-      { type: 'rss', url: 'https://www.govtech.com/rss.xml',          tag: 'curated' },
-      { type: 'rss', url: 'https://statetechmagazine.com/rss.xml',    tag: 'curated' },
-      { type: 'bing', query: 'municipal GIS aerial imagery program',  tag: 'vertical' },
-      { type: 'bing', query: 'state government geospatial mapping',   tag: 'vertical' },
+      { type: 'rss', url: 'https://www.govtech.com/rss.xml', tag: 'curated' },
+      { type: 'rss', url: 'https://statetechmagazine.com/rss.xml', tag: 'curated' },
+      { type: 'bing', query: 'municipal GIS aerial imagery program', tag: 'vertical' },
+      { type: 'bing', query: 'state government geospatial mapping', tag: 'vertical' },
       { type: 'bing', query: 'emergency management aerial imagery disaster', tag: 'vertical' },
     ]
   },
@@ -249,10 +257,10 @@ const FEEDS = [
     label: 'Energy & Utilities',
     color: '#8A4A1A', bg: '#FBF4EC',
     sources: [
-      { type: 'rss', url: 'https://www.utilitydive.com/feeds/news/',   tag: 'curated' },
-      { type: 'rss', url: 'https://www.tdworld.com/rss/all',           tag: 'curated' },
-      { type: 'bing', query: 'utility vegetation management aerial',   tag: 'vertical' },
-      { type: 'bing', query: 'power line inspection aerial imagery',   tag: 'vertical' },
+      { type: 'rss', url: 'https://www.utilitydive.com/feeds/news/', tag: 'curated' },
+      { type: 'rss', url: 'https://www.tdworld.com/rss/all', tag: 'curated' },
+      { type: 'bing', query: 'utility vegetation management aerial', tag: 'vertical' },
+      { type: 'bing', query: 'power line inspection aerial imagery', tag: 'vertical' },
       { type: 'bing', query: 'grid infrastructure monitoring satellite', tag: 'vertical' },
     ]
   },
@@ -265,12 +273,12 @@ const FEEDS = [
     label: 'Forestry & Environment',
     color: '#2A6630', bg: '#EEF8EF',
     sources: [
-      { type: 'rss', url: 'https://news.mongabay.com/feed/',           tag: 'curated' },
-      { type: 'rss', url: 'https://www.carbonbrief.org/feed/',         tag: 'curated' },
-      { type: 'bing', query: 'wildfire mapping aerial imagery',        tag: 'vertical' },
+      { type: 'rss', url: 'https://news.mongabay.com/feed/', tag: 'curated' },
+      { type: 'rss', url: 'https://www.carbonbrief.org/feed/', tag: 'curated' },
+      { type: 'bing', query: 'wildfire mapping aerial imagery', tag: 'vertical' },
       { type: 'bing', query: 'forest monitoring satellite remote sensing', tag: 'vertical' },
-      { type: 'bing', query: 'carbon offset verification imagery',     tag: 'vertical' },
-      { type: 'bing', query: 'deforestation monitoring aerial',        tag: 'vertical' },
+      { type: 'bing', query: 'carbon offset verification imagery', tag: 'vertical' },
+      { type: 'bing', query: 'deforestation monitoring aerial', tag: 'vertical' },
     ]
   },
 
@@ -282,9 +290,9 @@ const FEEDS = [
     label: 'Mapping Tech',
     color: '#4B3F8A', bg: '#F1EEFA',
     sources: [
-      { type: 'bing', query: 'basemap aerial imagery update',        tag: 'vertical' },
-      { type: 'bing', query: 'digital twin geospatial mapping',      tag: 'vertical' },
-      { type: 'bing', query: 'navigation maps satellite imagery',    tag: 'vertical' },
+      { type: 'bing', query: 'basemap aerial imagery update', tag: 'vertical' },
+      { type: 'bing', query: 'digital twin geospatial mapping', tag: 'vertical' },
+      { type: 'bing', query: 'navigation maps satellite imagery', tag: 'vertical' },
       { type: 'bing', query: '"high resolution" mapping orthoimagery', tag: 'vertical' },
     ]
   },
@@ -297,10 +305,10 @@ const FEEDS = [
     label: 'Roofing & Home Services',
     color: '#A04E1C', bg: '#FBF0E8',
     sources: [
-      { type: 'bing', query: 'roofing contractor aerial imagery',      tag: 'vertical' },
-      { type: 'bing', query: 'roof measurement satellite EagleView',   tag: 'vertical' },
-      { type: 'bing', query: 'home services aerial inspection',        tag: 'vertical' },
-      { type: 'bing', query: 'storm damage roof inspection aerial',    tag: 'vertical' },
+      { type: 'bing', query: 'roofing contractor aerial imagery', tag: 'vertical' },
+      { type: 'bing', query: 'roof measurement satellite EagleView', tag: 'vertical' },
+      { type: 'bing', query: 'home services aerial inspection', tag: 'vertical' },
+      { type: 'bing', query: 'storm damage roof inspection aerial', tag: 'vertical' },
     ]
   },
 ];
@@ -310,7 +318,7 @@ let allArticles = [];
 let activeTab = 'all';
 let isLoading = false;
 
-// ---------- FETCH ----------
+// ---------- FETCH (through Cloudflare Worker) ----------
 async function fetchUrl(url) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
@@ -330,7 +338,7 @@ function bingNewsUrl(query) {
   return `https://www.bing.com/news/search?q=${encodeURIComponent(query)}&format=rss`;
 }
 
-// ---------- HELPERS ----------
+// ---------- PARSING & HELPERS ----------
 function stripHtml(html) {
   const d = document.createElement('div');
   d.innerHTML = html || '';
@@ -358,23 +366,12 @@ function tsFor(a) {
   return isNaN(t) ? 0 : t;
 }
 
-// Dedup by URL primarily — title-based dedup was too aggressive when the
-// same article appears in both NSL press page and Bing News with slightly
-// different titles.
 function dedup(arr) {
-  const seenUrl = new Set();
-  const seenTitle = new Set();
+  const seen = new Set();
   return arr.filter(a => {
-    const urlKey = (a.link || '').split('?')[0].replace(/\/$/, '').toLowerCase();
-    if (urlKey && urlKey !== '#' && seenUrl.has(urlKey)) return false;
-    if (urlKey && urlKey !== '#') seenUrl.add(urlKey);
-
-    // Loose title dedup as backup, but only for very close matches
-    const titleKey = (a.title || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 80);
-    if (titleKey && seenTitle.has(titleKey)) return false;
-    if (titleKey) seenTitle.add(titleKey);
-
-    return true;
+    const k = (a.title || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
+    if (!k || seen.has(k)) return false;
+    seen.add(k); return true;
   });
 }
 
@@ -387,16 +384,13 @@ function isRelevant(article) {
   return RELEVANCE_TERMS.some(term => blob.includes(term));
 }
 
-// Freshness: company press has no cutoff (history matters); everything else 120 days
-function isFresh(article, source) {
+function isFresh(article) {
   const t = new Date(article.date).getTime();
   if (isNaN(t)) return true;
-  if (source && source.tag === 'company_press') return true; // keep all NSL press history
-  if (source && source.tag === 'company')        return (Date.now() - t) <= MAX_AGE_MS;
-  return (Date.now() - t) <= (120 * 24 * 60 * 60 * 1000);
+  return (Date.now() - t) <= MAX_AGE_MS;
 }
 
-// ---------- RSS / BING XML PARSER ----------
+// ---------- RSS / Bing News XML PARSER ----------
 function parseXml(xmlStr, feed, feedUrl) {
   try {
     const doc = new DOMParser().parseFromString(xmlStr, 'application/xml');
@@ -407,7 +401,7 @@ function parseXml(xmlStr, feed, feedUrl) {
     return items.slice(0, 40).map(el => {
       const title = cleanTitle(el.querySelector('title')?.textContent?.trim() || '');
       if (!title || title.length < 6) return null;
-      if (title === 'BLOCKED_BY_GOOGLE') return null;
+      if (title === 'BLOCKED_BY_GOOGLE') return null; // safety check
 
       let link = el.querySelector('link')?.textContent?.trim() || '';
       if (!link || !link.startsWith('http')) {
@@ -429,97 +423,69 @@ function parseXml(xmlStr, feed, feedUrl) {
   }
 }
 
-// ---------- NSL PRESS PAGE PARSER (rewritten) ----------
-// Parses one page of nearspacelabs.com/press. The Webflow template renders
-// each press entry as either:
-//   <a href="external-url">PublicationNameTitle of Article (Article|Podcast|Video)</a>
-// or with a date prefix like "January 12, 2026 Publication Title See More"
-//
-// We extract the URL, infer the publication from the leading capitalized
-// section of the link text, and pull a nearby date when present.
+// ---------- NSL PRESS PAGE PARSER ----------
+// Scrapes nearspacelabs.com/press for the authoritative list of NSL coverage.
+// The page is built with Webflow; press items are anchors with dates.
 function parseNslPress(html, feed, feedUrl) {
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html');
+    // Press items have a date string followed by publication name and title.
+    // We look for anchors with external href that point to actual articles.
     const anchors = Array.from(doc.querySelectorAll('a[href^="http"]'));
+    const externalArticles = anchors.filter(a => {
+      const href = a.getAttribute('href') || '';
+      const text = (a.textContent || '').trim();
+      // Skip internal links and nav
+      if (href.includes('nearspacelabs.com')) return false;
+      if (href.includes('linkedin.com') || href.includes('twitter.com')) return false;
+      // Must have meaningful text
+      if (text.length < 15) return false;
+      return true;
+    });
+
     const seen = new Set();
     const results = [];
-
-    // Known publication names — used to split combined "PubTitle" strings
-    const KNOWN_PUBS = [
-      'TechCrunch','Wall Street Journal','The Wall Street Journal','WSJ','CNBC',
-      'NewScientist','New Scientist','Business Wire','BusinessWire','Reuters',
-      'Bloomberg','Forbes','Insurance Innovation Reporter','Geospatial World',
-      'Realtor','Realtor.com','Climate CEOs','Interesting Engineering',
-      "Best's Review","Bests Review",'GIM International','Inside Unmanned Systems',
-      'Insurance Journal','SpaceNews','Space News','VentureBeat','Built In',
-      'Axios','The Information','Mongabay','Carbon Brief','Crunchbase',
-      'Tom Chi','Singularity Hub','Aerospace America','PR Newswire','Yahoo',
-      'Direct Industry','AgFunder','Sustainable Brands','Power Lunch',
-    ];
-
-    for (const a of anchors) {
-      const href = a.getAttribute('href') || '';
-      // Skip internal nav links and resource links
-      if (href.includes('nearspacelabs.com')) continue;
-      if (href.includes('linkedin.com') || href.includes('twitter.com') ||
-          href.includes('instagram.com') || href.includes('facebook.com') ||
-          href.includes('youtube.com') || href.includes('mailto:')) continue;
-
+    for (const a of externalArticles) {
+      const href = a.getAttribute('href');
       if (seen.has(href)) continue;
-
-      const raw = (a.textContent || '').replace(/\s+/g, ' ').trim();
-      if (raw.length < 10) continue;
-      if (raw === 'See More' || raw === 'Next' || raw === 'Previous') continue;
-
-      // Try to split out a known publication name
-      let publication = '';
-      let title = raw;
-
-      for (const pub of KNOWN_PUBS) {
-        if (raw.startsWith(pub) && raw.length > pub.length + 5) {
-          publication = pub;
-          title = raw.slice(pub.length).trim();
-          break;
-        }
-        // Some entries are formatted "Title<Pub><Type>" (e.g. ends with "TechCrunchArticle")
-        const tailMatch = new RegExp(pub + '(Article|Podcast|Video|Press Release)?$').exec(raw);
-        if (tailMatch && tailMatch.index > 10) {
-          publication = pub;
-          title = raw.slice(0, tailMatch.index).trim();
-          break;
-        }
-      }
-
-      // Strip trailing type tags
-      title = title.replace(/(Article|Podcast|Press Release|Video)$/i, '').trim();
-      // Strip trailing "See More" if it leaked in
-      title = title.replace(/See More$/i, '').trim();
-
-      if (title.length < 8) continue;
-
-      // Look for date in parent/ancestor text
-      let dateStr = '';
-      let node = a;
-      for (let depth = 0; depth < 4 && node && !dateStr; depth++) {
-        const txt = node.textContent || '';
-        const m = txt.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/);
-        if (m) dateStr = m[0];
-        node = node.parentElement;
-      }
-
       seen.add(href);
+
+      const fullText = (a.textContent || '').trim();
+      // Try to split into publication + title (e.g. "TechCrunchNear Space Labs nabs $20M...")
+      // Look for a date string nearby
+      let publication = '';
+      let title = fullText;
+
+      // Look for date in parent or sibling text — Webflow renders dates as preceding text
+      const parent = a.parentElement;
+      const parentText = parent ? (parent.textContent || '') : '';
+      const dateMatch = parentText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/);
+      const dateStr = dateMatch ? dateMatch[0] : '';
+
+      // Try to extract publication name (precedes title in concatenated text)
+      const pubMatch = fullText.match(/^([A-Z][A-Za-z'\s&.]+?)([A-Z][^A-Z].+)$/);
+      if (pubMatch && pubMatch[1].length < 40) {
+        publication = pubMatch[1].trim();
+        title = pubMatch[2].trim();
+      }
+
+      // Filter out social-link anchors and "See More" buttons
+      if (title.length < 10 || title === 'See More' || title === 'Next') continue;
+      // Trim trailing tags like "Article" or "Podcast"
+      title = title.replace(/(Article|Podcast|Press Release|Video)$/, '').trim();
+
       results.push({
         feedId: feed.id,
         feed,
         title,
         link: href,
-        source: publication || 'Press',
+        source: publication || 'nearspacelabs.com/press',
         date: dateStr ? new Date(dateStr).toUTCString() : '',
-        excerpt: publication ? `Coverage of Near Space Labs in ${publication}.` : 'Near Space Labs press coverage.',
+        excerpt: 'Featured in Near Space Labs press coverage.',
       });
     }
 
-    return results;
+    return results.slice(0, 25);
   } catch (e) {
     console.warn('NSL press parse error:', e);
     return [];
@@ -529,8 +495,8 @@ function parseNslPress(html, feed, feedUrl) {
 // ---------- ROUTER ----------
 async function fetchSource(source, feed) {
   let url;
-  if (source.type === 'bing')           url = bingNewsUrl(source.query);
-  else if (source.type === 'rss')       url = source.url;
+  if (source.type === 'bing')      url = bingNewsUrl(source.query);
+  else if (source.type === 'rss')  url = source.url;
   else if (source.type === 'nsl_press') url = source.url;
   else return [];
 
@@ -544,7 +510,7 @@ async function fetchSource(source, feed) {
     parsed = parseXml(body, feed, url);
   }
 
-  parsed = parsed.filter(a => isFresh(a, source));
+  parsed = parsed.filter(isFresh);
   if (shouldFilter(source)) parsed = parsed.filter(isRelevant);
   return parsed;
 }
@@ -696,7 +662,7 @@ function setTab(id) {
   renderGrid();
 }
 
-// ---------- EVENTS ----------
+// ---------- EVENT WIRING ----------
 document.getElementById('refresh-btn').addEventListener('click', () => {
   sessionStorage.removeItem(CACHE_KEY);
   loadAll({ useCache: false });
