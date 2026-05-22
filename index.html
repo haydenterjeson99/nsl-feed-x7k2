@@ -117,84 +117,176 @@
 </main>
 
 <script>
+/* ============================================================
+   NSL Intelligence Feed
+   ============================================================
+   GROUNDED IN: nearspacelabs.com — Near Space Labs is a geospatial
+   intelligence / Earth observation company operating stratospheric
+   "Swift" robots delivering 7cm orthoimagery at scale.
+
+   Six target verticals (per the official site):
+     P&C Insurance · State & Local Government · Energy & Utilities ·
+     Forestry & Environment · Mapping Technology · Roofing & Home Services
+
+   Direct competitors:
+     Aerial/HAPS:  Nearmap, EagleView, Vexcel
+     Satellite:    Planet Labs, Maxar, BlackSky, Satellogic
+     Drone:        Zeitview (formerly DroneBase), DroneDeploy
+   ============================================================ */
+
 // ---------- CONFIG ----------
-const CACHE_KEY = 'nsl_feed_cache_v3';
-const CACHE_TTL_MS = 10 * 60 * 1000;  // 10 minutes
-const FETCH_TIMEOUT_MS = 9000;
+const CACHE_KEY = 'nsl_feed_cache_v4';
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 10000;
 const BATCH_SIZE = 12;
 
-// Relevance keyword list — used ONLY to filter Google News results, not RSS feeds.
-// RSS feeds from curated trade publications are trusted as already on-topic.
-const INDUSTRY_TERMS = [
+// Soft relevance terms — only applied to broad vertical Google News queries
+// (not to company name queries, where the name match IS the relevance signal).
+const RELEVANCE_TERMS = [
   'aerial', 'satellite', 'geospatial', 'imagery', 'remote sensing',
   'earth observation', 'drone', 'uav', 'lidar', 'gis', 'mapping',
-  'orthoimagery', 'stratosphere', 'stratospheric', 'high altitude',
-  'overhead', 'photogrammetry', 'geoint', 'eagleview', 'nearmap',
-  'vexcel', 'maxar', 'planet labs', 'blacksky', 'near space labs',
-  'roof inspection', 'vegetation management', 'aerial inspection',
-  'aerial survey', 'aerial photography', 'aerial data', 'aerial mapping',
-  'satellite imagery', 'wildfire', 'deforestation', 'forest monitoring',
-  'crop monitoring', 'precision agriculture', 'land use', 'land cover',
-  'spatial data', 'cartography', 'orthophoto', 'mosaic', 'airborne',
-  'surveying', 'topograph', 'elevation model', 'dem', 'dsm', 'point cloud'
+  'orthoimagery', 'orthophoto', 'stratosphere', 'stratospheric',
+  'photogrammetry', 'geoint', 'overhead', 'airborne', 'roof inspection',
+  'vegetation management', 'aerial inspection', 'aerial survey',
+  'aerial photography', 'aerial data', 'aerial mapping', 'satellite imagery',
+  'wildfire mapping', 'deforestation', 'forest monitoring', 'crop monitoring',
+  'precision agriculture', 'land use', 'land cover', 'spatial data',
+  'cartography', 'point cloud', 'dem', 'dsm', 'high resolution imagery',
+  'near space labs', 'nearmap', 'eagleview', 'vexcel', 'maxar',
+  'planet labs', 'blacksky', 'satellogic', 'zeitview', 'dronedeploy'
 ];
 
 const FEEDS = [
+  // ---- COMPANY ----
   {
-    id: 'nsl', label: 'Near Space Labs', color: '#CC6847', bg: '#FDF2EC',
+    id: 'nsl',
+    label: 'Near Space Labs',
+    color: '#CC6847', bg: '#FDF2EC',
     sources: [
-      { type: 'gnews', query: '"Near Space Labs"', bypassRelevance: true },
-      { type: 'gnews', query: '"Near Space Labs" Swift OR balloon OR stratosphere', bypassRelevance: true },
+      { type: 'gnews', query: '"Near Space Labs"', tag: 'company' },
+      { type: 'gnews', query: '"Near Space Labs" Swift', tag: 'company' },
+      { type: 'gnews', query: '"Near Space Labs" stratospheric', tag: 'company' },
+      { type: 'gnews', query: 'Rema Matevosyan Near Space Labs', tag: 'company' },
     ]
   },
+
+  // ---- COMPETITORS ----
+  // One query per named competitor — combined OR queries return mostly
+  // the most-famous name and miss the others.
   {
-    id: 'competitors', label: 'Competitors', color: '#5C4E44', bg: '#F5F0E8',
+    id: 'competitors',
+    label: 'Competitors',
+    color: '#5C4E44', bg: '#F5F0E8',
     sources: [
-      // Named competitor queries — name match is sufficient relevance signal
-      { type: 'gnews', query: 'Nearmap', bypassRelevance: true },
-      { type: 'gnews', query: 'EagleView OR Vexcel', bypassRelevance: true },
-      { type: 'gnews', query: '(Maxar OR "Planet Labs" OR BlackSky) -stock -earnings', bypassRelevance: true },
+      // Aerial / HAPS
+      { type: 'gnews', query: '"Nearmap"', tag: 'competitor' },
+      { type: 'gnews', query: '"EagleView"', tag: 'competitor' },
+      { type: 'gnews', query: '"Vexcel" imagery', tag: 'competitor' },
+      // Satellite operators
+      { type: 'gnews', query: '"Planet Labs" imagery', tag: 'competitor' },
+      { type: 'gnews', query: '"Maxar" imagery', tag: 'competitor' },
+      { type: 'gnews', query: '"BlackSky" imagery', tag: 'competitor' },
+      { type: 'gnews', query: '"Satellogic"', tag: 'competitor' },
+      // Drone imagery
+      { type: 'gnews', query: '"Zeitview"', tag: 'competitor' },
+      { type: 'gnews', query: '"DroneDeploy"', tag: 'competitor' },
     ]
   },
+
+  // ---- HIDDEN: Geospatial industry (flows into All only) ----
   {
-    id: 'general', label: 'General', hidden: true, color: '#3B6E8A', bg: '#EFF6FB',
+    id: 'industry',
+    label: 'Industry', hidden: true,
+    color: '#3B6E8A', bg: '#EFF6FB',
     sources: [
-      { type: 'gnews', query: '"earth observation" commercial imagery' },
-      { type: 'gnews', query: 'geospatial remote sensing aerial' },
-      { type: 'rss', url: 'https://geospatialworld.net/feed/' },
-      { type: 'rss', url: 'https://www.gim-international.com/rss.xml' },
+      { type: 'rss', url: 'https://geospatialworld.net/feed/', tag: 'curated' },
+      { type: 'rss', url: 'https://www.gim-international.com/rss.xml', tag: 'curated' },
+      { type: 'gnews', query: 'earth observation commercial imagery', tag: 'vertical' },
+      { type: 'gnews', query: 'geospatial intelligence remote sensing', tag: 'vertical' },
+      { type: 'gnews', query: 'high resolution aerial imagery', tag: 'vertical' },
     ]
   },
+
+  // ---- VERTICAL 1: P&C INSURANCE ----
   {
-    id: 'insurance', label: 'P&C Insurance', color: '#2E6B50', bg: '#EDFAF4',
+    id: 'insurance',
+    label: 'P&C Insurance',
+    color: '#2E6B50', bg: '#EDFAF4',
     sources: [
-      { type: 'rss', url: 'https://insuranceinnovationreporter.com/feed/' },
-      { type: 'gnews', query: 'property insurance aerial OR satellite imagery roof' },
-      { type: 'gnews', query: 'catastrophe modeling insurtech "property risk"' },
+      { type: 'rss', url: 'https://insuranceinnovationreporter.com/feed/', tag: 'curated' },
+      { type: 'gnews', query: 'property insurance aerial imagery underwriting', tag: 'vertical' },
+      { type: 'gnews', query: 'homeowners insurance satellite imagery', tag: 'vertical' },
+      { type: 'gnews', query: 'catastrophe modeling property risk imagery', tag: 'vertical' },
+      { type: 'gnews', query: 'insurance roof inspection aerial', tag: 'vertical' },
     ]
   },
+
+  // ---- VERTICAL 2: STATE & LOCAL GOVERNMENT ----
   {
-    id: 'government', label: 'Gov & Public Sector', color: '#7A2020', bg: '#FDF0F0',
+    id: 'government',
+    label: 'State & Local Gov',
+    color: '#7A2020', bg: '#FDF0F0',
     sources: [
-      { type: 'rss', url: 'https://www.govtech.com/rss.xml' },
-      { type: 'rss', url: 'https://statetechmagazine.com/rss.xml' },
-      { type: 'gnews', query: 'government GIS aerial imagery emergency management' },
+      { type: 'rss', url: 'https://www.govtech.com/rss.xml', tag: 'curated' },
+      { type: 'rss', url: 'https://statetechmagazine.com/rss.xml', tag: 'curated' },
+      { type: 'gnews', query: 'municipal GIS aerial imagery program', tag: 'vertical' },
+      { type: 'gnews', query: 'state government geospatial mapping', tag: 'vertical' },
+      { type: 'gnews', query: 'emergency management aerial imagery disaster', tag: 'vertical' },
     ]
   },
+
+  // ---- VERTICAL 3: ENERGY & UTILITIES ----
   {
-    id: 'energy', label: 'Energy & Utilities', color: '#8A4A1A', bg: '#FBF4EC',
+    id: 'energy',
+    label: 'Energy & Utilities',
+    color: '#8A4A1A', bg: '#FBF4EC',
     sources: [
-      { type: 'rss', url: 'https://www.utilitydive.com/feeds/news/' },
-      { type: 'rss', url: 'https://www.tdworld.com/rss/all' },
-      { type: 'gnews', query: 'utility "vegetation management" OR "aerial inspection" grid' },
+      { type: 'rss', url: 'https://www.utilitydive.com/feeds/news/', tag: 'curated' },
+      { type: 'rss', url: 'https://www.tdworld.com/rss/all', tag: 'curated' },
+      { type: 'gnews', query: 'utility vegetation management aerial', tag: 'vertical' },
+      { type: 'gnews', query: 'power line inspection aerial imagery', tag: 'vertical' },
+      { type: 'gnews', query: 'grid infrastructure monitoring satellite', tag: 'vertical' },
     ]
   },
+
+  // ---- VERTICAL 4: FORESTRY & ENVIRONMENT ----
   {
-    id: 'forestry', label: 'Forestry & Environment', color: '#2A6630', bg: '#EEF8EF',
+    id: 'forestry',
+    label: 'Forestry & Environment',
+    color: '#2A6630', bg: '#EEF8EF',
     sources: [
-      { type: 'rss', url: 'https://news.mongabay.com/feed/' },
-      { type: 'rss', url: 'https://www.carbonbrief.org/feed/' },
-      { type: 'gnews', query: 'wildfire OR deforestation aerial OR satellite monitoring' },
+      { type: 'rss', url: 'https://news.mongabay.com/feed/', tag: 'curated' },
+      { type: 'rss', url: 'https://www.carbonbrief.org/feed/', tag: 'curated' },
+      { type: 'gnews', query: 'wildfire mapping aerial imagery', tag: 'vertical' },
+      { type: 'gnews', query: 'forest monitoring satellite remote sensing', tag: 'vertical' },
+      { type: 'gnews', query: 'carbon offset verification imagery', tag: 'vertical' },
+      { type: 'gnews', query: 'deforestation monitoring aerial', tag: 'vertical' },
+    ]
+  },
+
+  // ---- VERTICAL 5: MAPPING TECHNOLOGY ----
+  {
+    id: 'mapping',
+    label: 'Mapping Tech',
+    color: '#4B3F8A', bg: '#F1EEFA',
+    sources: [
+      { type: 'gnews', query: 'basemap aerial imagery update', tag: 'vertical' },
+      { type: 'gnews', query: 'digital twin geospatial mapping', tag: 'vertical' },
+      { type: 'gnews', query: 'navigation maps satellite imagery', tag: 'vertical' },
+      { type: 'gnews', query: '"high resolution" mapping orthoimagery', tag: 'vertical' },
+    ]
+  },
+
+  // ---- VERTICAL 6: ROOFING & HOME SERVICES ----
+  {
+    id: 'roofing',
+    label: 'Roofing & Home Services',
+    color: '#A04E1C', bg: '#FBF0E8',
+    sources: [
+      { type: 'gnews', query: 'roofing contractor aerial imagery', tag: 'vertical' },
+      { type: 'gnews', query: 'roof measurement satellite EagleView', tag: 'vertical' },
+      { type: 'gnews', query: 'home services technology aerial inspection', tag: 'vertical' },
+      { type: 'gnews', query: 'storm damage roof inspection aerial', tag: 'vertical' },
     ]
   },
 ];
@@ -226,10 +318,10 @@ async function fetchXml(url) {
 }
 
 // ---------- URL BUILDERS ----------
+// Google News native sort returns recent items; no `when:` filter — that
+// operator is unreliable and was filtering out genuinely current results.
 function gnewsUrl(query) {
-  // when:14d gives a 2-week window — wide enough for niche topics, narrow enough to stay fresh
-  const q = `${query} when:14d`;
-  return `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+  return `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
 }
 
 // ---------- PARSING & HELPERS ----------
@@ -269,17 +361,27 @@ function dedup(arr) {
   });
 }
 
-// Relevance is now per-SOURCE, not per-feed. RSS feeds skip it entirely;
-// Google News queries get filtered unless explicitly marked bypassRelevance.
+// Per-tag filtering:
+//   company  → trust completely (name match is the signal)
+//   competitor → trust completely (name match is the signal)
+//   curated  → trust completely (already on-topic publication)
+//   vertical → soft filter against RELEVANCE_TERMS
 function shouldFilter(source) {
-  if (source.type === 'rss') return false;
-  if (source.bypassRelevance) return false;
-  return true;
+  return source.tag === 'vertical';
 }
 
 function isRelevant(article) {
   const blob = `${article.title} ${article.excerpt}`.toLowerCase();
-  return INDUSTRY_TERMS.some(term => blob.includes(term));
+  return RELEVANCE_TERMS.some(term => blob.includes(term));
+}
+
+// Only keep articles published in the last ~90 days. Some RSS feeds include
+// very old items; soft cap keeps the feed feeling current.
+const MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+function isFresh(article) {
+  const t = new Date(article.date).getTime();
+  if (isNaN(t)) return true; // keep undated items rather than drop them
+  return (Date.now() - t) <= MAX_AGE_MS;
 }
 
 function parseXml(xmlStr, feed, feedUrl) {
@@ -324,6 +426,7 @@ async function fetchSource(source, feed) {
   const xml = await fetchXml(url);
   if (!xml) return [];
   let parsed = parseXml(xml, feed, url);
+  parsed = parsed.filter(isFresh);
   if (shouldFilter(source)) {
     parsed = parsed.filter(isRelevant);
   }
@@ -449,7 +552,7 @@ function renderGrid() {
   if (!list.length) {
     const msg = isLoading
       ? 'Loading articles for this category…'
-      : 'No articles found. Try refreshing.';
+      : 'No articles found yet. Try refreshing in a moment.';
     grid.innerHTML = `<div class="empty"><span class="empty-icon">📭</span>${msg}</div>`;
     return;
   }
@@ -479,7 +582,7 @@ function setTab(id) {
 
 // ---------- EVENT WIRING ----------
 document.getElementById('refresh-btn').addEventListener('click', () => {
-  sessionStorage.removeItem(CACHE_KEY); // force fresh fetch
+  sessionStorage.removeItem(CACHE_KEY);
   loadAll({ useCache: false });
 });
 document.getElementById('tabs').addEventListener('click', (e) => {
