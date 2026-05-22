@@ -46,6 +46,8 @@
 
     #status-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; min-height: 20px; }
     #status-msg { font-size: 12px; color: var(--muted); }
+    #cache-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; background: var(--terra-lt); color: var(--terra-dk); text-transform: uppercase; letter-spacing: .4px; display: none; }
+    #cache-badge.visible { display: inline-block; }
     .dot-loader { display: flex; gap: 4px; }
     .dot-loader span { width: 5px; height: 5px; border-radius: 50%; background: var(--terracotta); animation: bounce 1.2s infinite; }
     .dot-loader span:nth-child(2) { animation-delay: .2s; }
@@ -92,7 +94,7 @@
   </div>
   <div class="header-right">
     <span id="last-updated"></span>
-    <button id="refresh-btn" onclick="loadAll()">
+    <button id="refresh-btn">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
@@ -109,32 +111,53 @@
   <div id="status-bar" style="display:none">
     <div class="dot-loader"><span></span><span></span><span></span></div>
     <span id="status-msg">Loading…</span>
+    <span id="cache-badge">cached</span>
   </div>
   <div id="grid"></div>
 </main>
 
 <script>
+// ---------- CONFIG ----------
+const CACHE_KEY = 'nsl_feed_cache_v2';
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const FETCH_TIMEOUT_MS = 9000;       // per-proxy abort
+const BATCH_SIZE = 12;
+
+// Industry-level relevance terms. An article must contain at least one of these
+// in title or excerpt to be considered on-topic for NSL.
+const INDUSTRY_TERMS = [
+  'aerial', 'satellite', 'geospatial', 'imagery', 'remote sensing',
+  'earth observation', 'drone', 'uav', 'lidar', 'gis', 'mapping',
+  'orthoimagery', 'stratosphere', 'stratospheric', 'high altitude',
+  'overhead', 'photogrammetry', 'geoint', 'eagleview', 'nearmap',
+  'vexcel', 'maxar', 'planet labs', 'blacksky', 'near space labs',
+  'roof inspection', 'vegetation management', 'aerial inspection',
+  'aerial survey', 'aerial photography', 'aerial data'
+];
+
 const FEEDS = [
   {
     id: 'nsl', label: 'Near Space Labs', color: '#CC6847', bg: '#FDF2EC',
+    // Company tab: always show NSL mentions even if no other industry term hits.
+    bypassRelevance: true,
     sources: [
       { type: 'gnews', query: '"Near Space Labs"' },
-      { type: 'gnews', query: 'Near Space Labs Swift balloon stratosphere aerial imaging' },
+      { type: 'gnews', query: '"Near Space Labs" Swift OR balloon OR stratosphere' },
     ]
   },
   {
     id: 'competitors', label: 'Competitors', color: '#5C4E44', bg: '#F5F0E8',
     sources: [
-      { type: 'gnews', query: 'Nearmap aerial imagery property insurance geospatial' },
-      { type: 'gnews', query: 'EagleView OR Vexcel aerial imagery property data' },
-      { type: 'gnews', query: 'Maxar OR "Planet Labs" OR BlackSky commercial satellite aerial geospatial' },
+      { type: 'gnews', query: 'Nearmap aerial OR imagery OR property -stock' },
+      { type: 'gnews', query: '(EagleView OR Vexcel) aerial OR imagery OR property' },
+      { type: 'gnews', query: '(Maxar OR "Planet Labs" OR BlackSky) satellite OR imagery -stock -earnings' },
     ]
   },
   {
     id: 'general', label: 'General', hidden: true, color: '#3B6E8A', bg: '#EFF6FB',
     sources: [
-      { type: 'gnews', query: '"earth observation" OR GEOINT commercial aerial satellite imagery market' },
-      { type: 'gnews', query: 'geospatial technology remote sensing aerial analytics industry' },
+      { type: 'gnews', query: '"earth observation" OR GEOINT commercial imagery' },
+      { type: 'gnews', query: 'geospatial remote sensing aerial analytics' },
       { type: 'rss', url: 'https://geospatialworld.net/feed/' },
       { type: 'rss', url: 'https://www.gim-international.com/rss.xml' },
     ]
@@ -143,8 +166,8 @@ const FEEDS = [
     id: 'insurance', label: 'P&C Insurance', color: '#2E6B50', bg: '#EDFAF4',
     sources: [
       { type: 'rss', url: 'https://insuranceinnovationreporter.com/feed/' },
-      { type: 'gnews', query: 'property insurance aerial imagery roof inspection geospatial underwriting' },
-      { type: 'gnews', query: 'catastrophe modeling insurtech "property risk" remote sensing satellite claims' },
+      { type: 'gnews', query: 'property insurance aerial imagery roof inspection -auto -health -workers -life' },
+      { type: 'gnews', query: 'catastrophe modeling "property risk" satellite OR aerial claims -auto -health' },
     ]
   },
   {
@@ -152,7 +175,7 @@ const FEEDS = [
     sources: [
       { type: 'rss', url: 'https://www.govtech.com/rss.xml' },
       { type: 'rss', url: 'https://statetechmagazine.com/rss.xml' },
-      { type: 'gnews', query: 'government geospatial GIS aerial imagery state local emergency management mapping' },
+      { type: 'gnews', query: 'government GIS aerial OR satellite imagery emergency management -military' },
     ]
   },
   {
@@ -160,7 +183,7 @@ const FEEDS = [
     sources: [
       { type: 'rss', url: 'https://www.utilitydive.com/feeds/news/' },
       { type: 'rss', url: 'https://www.tdworld.com/rss/all' },
-      { type: 'gnews', query: 'utility "vegetation management" OR "aerial inspection" power line infrastructure monitoring geospatial' },
+      { type: 'gnews', query: 'utility ("vegetation management" OR "aerial inspection") power line OR grid -earnings' },
     ]
   },
   {
@@ -168,38 +191,45 @@ const FEEDS = [
     sources: [
       { type: 'rss', url: 'https://news.mongabay.com/feed/' },
       { type: 'rss', url: 'https://www.carbonbrief.org/feed/' },
-      { type: 'gnews', query: 'wildfire OR deforestation forest monitoring aerial remote sensing carbon verification' },
+      { type: 'gnews', query: '(wildfire OR deforestation) monitoring aerial OR satellite OR remote sensing' },
     ]
   },
 ];
 
+// ---------- STATE ----------
 let allArticles = [];
-let activeTab   = 'all';
-let isLoading   = false;
+let activeTab = 'all';
+let isLoading = false;
 
+// ---------- FETCH (3-proxy race) ----------
 async function fetchXml(url) {
   const proxies = [
     `https://corsproxy.io/?${encodeURIComponent(url)}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
   ];
-  const makeAttempt = (proxyUrl) => {
+  const attempt = (proxyUrl) => {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 12000);
+    const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
     return fetch(proxyUrl, { signal: ctrl.signal })
       .then(res => { clearTimeout(t); if (!res.ok) throw new Error(res.status); return res.text(); })
       .catch(e  => { clearTimeout(t); throw e; });
   };
   try {
-    return await Promise.any(proxies.map(makeAttempt));
+    return await Promise.any(proxies.map(attempt));
   } catch {
     return '';
   }
 }
 
+// ---------- URL BUILDERS ----------
 function gnewsUrl(query) {
-  return `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+  // when:7d restricts to last 7 days — dramatically improves freshness/relevance
+  const q = `${query} when:7d`;
+  return `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
 }
 
+// ---------- PARSING & HELPERS ----------
 function stripHtml(html) {
   const d = document.createElement('div');
   d.innerHTML = html || '';
@@ -207,6 +237,7 @@ function stripHtml(html) {
 }
 
 function cleanTitle(t) {
+  // Strip trailing " - Publisher Name" that Google News appends
   return (t || '').replace(/\s[-–]\s[^-–]{1,50}$/, '').trim();
 }
 
@@ -222,6 +253,12 @@ function relTime(str) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: dy > 300 ? 'numeric' : undefined });
 }
 
+// Returns timestamp for sorting; articles without dates sort to the bottom.
+function tsFor(a) {
+  const t = new Date(a.date).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
 function dedup(arr) {
   const seen = new Set();
   return arr.filter(a => {
@@ -229,6 +266,13 @@ function dedup(arr) {
     if (!k || seen.has(k)) return false;
     seen.add(k); return true;
   });
+}
+
+// Relevance scoring: does the article touch the geospatial/aerial industry?
+function isRelevant(article) {
+  if (article.feed.bypassRelevance) return true;
+  const blob = `${article.title} ${article.excerpt}`.toLowerCase();
+  return INDUSTRY_TERMS.some(term => blob.includes(term));
 }
 
 function parseXml(xmlStr, feed, feedUrl) {
@@ -240,6 +284,8 @@ function parseXml(xmlStr, feed, feedUrl) {
     return items.slice(0, 40).map(el => {
       const title = cleanTitle(el.querySelector('title')?.textContent?.trim() || '');
       if (!title || title.length < 6) return null;
+
+      // Google News quirk: link URL is a sibling text node of <link>, not its content
       let link = '';
       const linkEl = el.querySelector('link');
       if (linkEl) {
@@ -252,6 +298,7 @@ function parseXml(xmlStr, feed, feedUrl) {
       if (!link || !link.startsWith('http')) {
         link = el.querySelector('guid')?.textContent?.trim() || '#';
       }
+
       let source = el.querySelector('source')?.textContent?.trim() || '';
       if (!source) {
         try { source = new URL(feedUrl).hostname.replace('www.', ''); } catch { source = feed.label; }
@@ -268,52 +315,113 @@ function parseXml(xmlStr, feed, feedUrl) {
 
 async function fetchSource(source, feed) {
   const url = source.type === 'gnews' ? gnewsUrl(source.query) : source.url;
-  const xml  = await fetchXml(url);
-  return xml ? parseXml(xml, feed, url) : [];
+  const xml = await fetchXml(url);
+  if (!xml) return [];
+  const parsed = parseXml(xml, feed, url);
+  return parsed.filter(isRelevant);
 }
 
-async function loadAll() {
+// ---------- CACHE ----------
+function readCache() {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj || !obj.savedAt || Date.now() - obj.savedAt > CACHE_TTL_MS) return null;
+    // Re-link feed reference (can't serialize the feed object cleanly)
+    const feedById = Object.fromEntries(FEEDS.map(f => [f.id, f]));
+    obj.articles = (obj.articles || []).map(a => ({ ...a, feed: feedById[a.feedId] })).filter(a => a.feed);
+    return obj;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(articles) {
+  try {
+    const slim = articles.map(({ feed, ...rest }) => rest); // strip feed ref for storage
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), articles: slim }));
+  } catch {
+    // sessionStorage may be full or disabled — fail silently
+  }
+}
+
+// ---------- LOAD ----------
+async function loadAll(opts = {}) {
   if (isLoading) return;
+  const { useCache = false } = opts;
   isLoading = true;
+
   const btn = document.getElementById('refresh-btn');
+  const progressWrap = document.getElementById('progress-wrap');
+  const progressBar = document.getElementById('progress-bar');
+  const statusBar = document.getElementById('status-bar');
+  const statusMsg = document.getElementById('status-msg');
+  const cacheBadge = document.getElementById('cache-badge');
+
+  // Try cache first
+  if (useCache) {
+    const cached = readCache();
+    if (cached && cached.articles.length) {
+      allArticles = cached.articles;
+      cacheBadge.classList.add('visible');
+      statusBar.style.display = 'flex';
+      statusMsg.textContent = `${allArticles.length} articles · cached ${relTime(new Date(cached.savedAt).toISOString())}`;
+      document.querySelector('.dot-loader').style.display = 'none';
+      document.getElementById('last-updated').textContent =
+        'Updated ' + new Date(cached.savedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      renderTabs();
+      renderGrid();
+      isLoading = false;
+      return;
+    }
+  }
+
+  // Live fetch
+  cacheBadge.classList.remove('visible');
+  document.querySelector('.dot-loader').style.display = 'flex';
   btn.classList.add('spinning');
-  document.getElementById('progress-wrap').classList.add('visible');
-  document.getElementById('progress-bar').style.width = '4%';
-  document.getElementById('status-bar').style.display = 'flex';
-  document.getElementById('status-msg').textContent = 'Fetching…';
+  progressWrap.classList.add('visible');
+  progressBar.style.width = '4%';
+  statusBar.style.display = 'flex';
+  statusMsg.textContent = 'Fetching…';
   document.getElementById('grid').innerHTML = '';
   allArticles = [];
+
   const allSources = FEEDS.flatMap(feed => feed.sources.map(src => ({ src, feed })));
   const total = allSources.length;
   let done = 0;
-  const BATCH = 8;
-  for (let i = 0; i < allSources.length; i += BATCH) {
-    const batch = allSources.slice(i, i + BATCH);
+
+  for (let i = 0; i < allSources.length; i += BATCH_SIZE) {
+    const batch = allSources.slice(i, i + BATCH_SIZE);
     await Promise.allSettled(
       batch.map(({ src, feed }) =>
         fetchSource(src, feed).then(items => {
           allArticles.push(...items);
           done++;
-          const pct = Math.round((done / total) * 100);
-          document.getElementById('progress-bar').style.width = `${pct}%`;
-          document.getElementById('status-msg').textContent =
-            `${done}/${total} sources · ${allArticles.length} articles`;
-          const sorted = dedup([...allArticles].sort((a, b) => new Date(b.date) - new Date(a.date)));
-          allArticles = sorted;
+          progressBar.style.width = `${Math.round((done / total) * 100)}%`;
+
+          // Sort + dedup once per batch completion (not per source)
+          allArticles = dedup([...allArticles].sort((a, b) => tsFor(b) - tsFor(a)));
+          statusMsg.textContent = `${done}/${total} sources · ${allArticles.length} articles`;
           renderTabs();
           renderGrid();
         })
       )
     );
   }
-  document.getElementById('progress-wrap').classList.remove('visible');
-  document.getElementById('status-bar').style.display = 'none';
+
+  writeCache(allArticles);
+
+  progressWrap.classList.remove('visible');
+  statusBar.style.display = 'none';
   document.getElementById('last-updated').textContent =
     'Updated ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   btn.classList.remove('spinning');
   isLoading = false;
 }
 
+// ---------- RENDER ----------
 function renderTabs() {
   const defs = [
     { id: 'all', label: 'All', color: '#1A1511', count: allArticles.length },
@@ -323,7 +431,7 @@ function renderTabs() {
     }))
   ];
   document.getElementById('tabs').innerHTML = defs.map(t => `
-    <div class="tab ${t.id === activeTab ? 'active' : ''}" onclick="setTab('${t.id}')">
+    <div class="tab ${t.id === activeTab ? 'active' : ''}" data-tab="${t.id}">
       <span class="tab-dot" style="background:${t.color}"></span>
       ${t.label}
       <span class="tab-count">${t.count}</span>
@@ -335,10 +443,15 @@ function renderGrid() {
   const list = activeTab === 'all'
     ? allArticles
     : allArticles.filter(a => a.feedId === activeTab);
+
   if (!list.length) {
-    grid.innerHTML = `<div class="empty"><span class="empty-icon">📭</span>Loading articles for this category…</div>`;
+    const msg = isLoading
+      ? 'Loading articles for this category…'
+      : 'No relevant articles found in the last 7 days. Try refreshing.';
+    grid.innerHTML = `<div class="empty"><span class="empty-icon">📭</span>${msg}</div>`;
     return;
   }
+
   grid.innerHTML = list.map(a => `
     <div class="card">
       <div class="card-top">
@@ -362,7 +475,15 @@ function setTab(id) {
   renderGrid();
 }
 
-loadAll();
+// ---------- EVENT WIRING ----------
+document.getElementById('refresh-btn').addEventListener('click', () => loadAll({ useCache: false }));
+document.getElementById('tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('[data-tab]');
+  if (tab) setTab(tab.dataset.tab);
+});
+
+// First load: use cache if available, else fetch live
+loadAll({ useCache: true });
 </script>
 </body>
 </html>
