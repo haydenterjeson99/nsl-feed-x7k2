@@ -42,16 +42,20 @@
 
     #progress-wrap { height: 3px; background: var(--border); border-radius: 2px; margin-bottom: 18px; overflow: hidden; display: none; }
     #progress-wrap.visible { display: block; }
-    #progress-bar { height: 100%; width: 0%; background: var(--terracotta); border-radius: 2px; transition: width .3s ease; }
+    #progress-bar { height: 100%; width: 4%; background: var(--terracotta); border-radius: 2px; transition: width .4s ease; }
 
-    #status { text-align: center; padding: 50px 20px; color: var(--muted); font-size: 14px; display: none; }
-    #status.visible { display: block; }
-    .spinner { width: 28px; height: 28px; margin: 0 auto 12px; border: 3px solid var(--border); border-top-color: var(--terracotta); border-radius: 50%; animation: spin .75s linear infinite; }
-    #status-msg { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    #status-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; min-height: 20px; }
+    #status-msg { font-size: 12px; color: var(--muted); }
+    .dot-loader { display: flex; gap: 4px; }
+    .dot-loader span { width: 5px; height: 5px; border-radius: 50%; background: var(--terracotta); animation: bounce 1.2s infinite; }
+    .dot-loader span:nth-child(2) { animation-delay: .2s; }
+    .dot-loader span:nth-child(3) { animation-delay: .4s; }
+    @keyframes bounce { 0%,80%,100% { transform: scale(.6); opacity:.4; } 40% { transform: scale(1); opacity:1; } }
 
     #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 17px; display: flex; flex-direction: column; gap: 9px; transition: box-shadow .15s, transform .15s; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 17px; display: flex; flex-direction: column; gap: 9px; transition: box-shadow .15s, transform .15s; animation: fadeUp .25s ease; }
+    @keyframes fadeUp { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: none; } }
     .card:hover { box-shadow: 0 4px 18px rgba(22,18,16,.10); transform: translateY(-1px); }
     .card-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
     .badge { font-size: 10px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; padding: 2px 8px; border-radius: 20px; }
@@ -83,7 +87,7 @@
     <div class="logo">N</div>
     <div>
       <div class="header-title">NSL Intelligence Feed</div>
-      <div class="header-sub">Near Space Labs · Competitive & Market News</div>
+      <div class="header-sub">Near Space Labs · Competitive & Market Intelligence</div>
     </div>
   </div>
   <div class="header-right">
@@ -102,10 +106,9 @@
 
 <main>
   <div id="progress-wrap"><div id="progress-bar"></div></div>
-  <div id="status">
-    <div class="spinner"></div>
-    <div>Loading your intelligence feed…</div>
-    <div id="status-msg"></div>
+  <div id="status-bar" style="display:none">
+    <div class="dot-loader"><span></span><span></span><span></span></div>
+    <span id="status-msg">Loading…</span>
   </div>
   <div id="grid"></div>
 </main>
@@ -113,59 +116,59 @@
 <script>
 const FEEDS = [
   {
-    id:'nsl', label:'Near Space Labs', color:'#CC6847', bg:'#FDF2EC',
-    sources:[
-      { type:'gnews', query:'"Near Space Labs"' },
-      { type:'gnews', query:'Near Space Labs stratosphere balloon Swift aerial imaging' },
+    id: 'nsl', label: 'Near Space Labs', color: '#CC6847', bg: '#FDF2EC',
+    sources: [
+      { type: 'gnews', query: '"Near Space Labs"' },
+      { type: 'gnews', query: 'Near Space Labs Swift balloon stratosphere aerial imaging' },
     ]
   },
   {
-    id:'competitors', label:'Competitors', color:'#5C4E44', bg:'#F5F0E8',
-    sources:[
-      { type:'gnews', query:'Nearmap aerial imagery property geospatial insurance' },
-      { type:'gnews', query:'EagleView Vexcel property data aerial imagery' },
-      { type:'gnews', query:'Maxar Planet Labs commercial aerial satellite imagery geospatial analytics' },
+    id: 'competitors', label: 'Competitors', color: '#5C4E44', bg: '#F5F0E8',
+    sources: [
+      { type: 'gnews', query: 'Nearmap aerial imagery property insurance geospatial' },
+      { type: 'gnews', query: 'EagleView OR Vexcel aerial imagery property data' },
+      { type: 'gnews', query: 'Maxar OR "Planet Labs" OR BlackSky commercial satellite aerial geospatial' },
     ]
   },
   {
-    id:'general', label:'General', hidden:true, color:'#3B6E8A', bg:'#EFF6FB',
-    sources:[
-      { type:'gnews', query:'"earth observation" commercial aerial satellite imagery analytics' },
-      { type:'gnews', query:'geospatial intelligence GEOINT remote sensing aerial data' },
-      { type:'rss',   url:'https://geospatialworld.net/feed/' },
-      { type:'rss',   url:'https://www.gim-international.com/rss.xml' },
+    id: 'general', label: 'General', hidden: true, color: '#3B6E8A', bg: '#EFF6FB',
+    sources: [
+      { type: 'gnews', query: '"earth observation" OR GEOINT commercial aerial satellite imagery market' },
+      { type: 'gnews', query: 'geospatial technology remote sensing aerial analytics industry' },
+      { type: 'rss', url: 'https://geospatialworld.net/feed/' },
+      { type: 'rss', url: 'https://www.gim-international.com/rss.xml' },
     ]
   },
   {
-    id:'insurance', label:'P&C Insurance', color:'#2E6B50', bg:'#EDFAF4',
-    sources:[
-      { type:'gnews', query:'property casualty insurance aerial imagery roof inspection technology' },
-      { type:'gnews', query:'insurance underwriting geospatial data remote sensing catastrophe modeling' },
-      { type:'gnews', query:'insurtech property claims aerial satellite imagery assessment' },
+    id: 'insurance', label: 'P&C Insurance', color: '#2E6B50', bg: '#EDFAF4',
+    sources: [
+      { type: 'rss', url: 'https://insuranceinnovationreporter.com/feed/' },
+      { type: 'gnews', query: 'property insurance aerial imagery roof inspection geospatial underwriting' },
+      { type: 'gnews', query: 'catastrophe modeling insurtech "property risk" remote sensing satellite claims' },
     ]
   },
   {
-    id:'government', label:'Gov & Public Sector', color:'#7A2020', bg:'#FDF0F0',
-    sources:[
-      { type:'rss',   url:'https://www.govtech.com/rss.xml' },
-      { type:'gnews', query:'government geospatial GIS aerial imagery state local emergency management' },
-      { type:'gnews', query:'public sector mapping infrastructure remote sensing aerial procurement' },
+    id: 'government', label: 'Gov & Public Sector', color: '#7A2020', bg: '#FDF0F0',
+    sources: [
+      { type: 'rss', url: 'https://www.govtech.com/rss.xml' },
+      { type: 'rss', url: 'https://statetechmagazine.com/rss.xml' },
+      { type: 'gnews', query: 'government geospatial GIS aerial imagery state local emergency management mapping' },
     ]
   },
   {
-    id:'energy', label:'Energy & Utilities', color:'#8A4A1A', bg:'#FBF4EC',
-    sources:[
-      { type:'rss',   url:'https://www.utilitydive.com/feeds/news/' },
-      { type:'gnews', query:'utility aerial inspection imagery vegetation management power line monitoring' },
-      { type:'gnews', query:'energy infrastructure remote sensing drone aerial survey grid resilience' },
+    id: 'energy', label: 'Energy & Utilities', color: '#8A4A1A', bg: '#FBF4EC',
+    sources: [
+      { type: 'rss', url: 'https://www.utilitydive.com/feeds/news/' },
+      { type: 'rss', url: 'https://www.tdworld.com/rss/all' },
+      { type: 'gnews', query: 'utility "vegetation management" OR "aerial inspection" power line infrastructure monitoring geospatial' },
     ]
   },
   {
-    id:'forestry', label:'Forestry & Environment', color:'#2A6630', bg:'#EEF8EF',
-    sources:[
-      { type:'rss',   url:'https://news.mongabay.com/feed/' },
-      { type:'gnews', query:'wildfire forest monitoring aerial remote sensing carbon mapping' },
-      { type:'gnews', query:'environmental monitoring deforestation satellite aerial imagery carbon offset' },
+    id: 'forestry', label: 'Forestry & Environment', color: '#2A6630', bg: '#EEF8EF',
+    sources: [
+      { type: 'rss', url: 'https://news.mongabay.com/feed/' },
+      { type: 'rss', url: 'https://www.carbonbrief.org/feed/' },
+      { type: 'gnews', query: 'wildfire OR deforestation forest monitoring aerial remote sensing carbon verification' },
     ]
   },
 ];
@@ -174,12 +177,27 @@ let allArticles = [];
 let activeTab   = 'all';
 let isLoading   = false;
 
-function gnewsUrl(query) {
-  return `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+async function fetchXml(url) {
+  const proxies = [
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  ];
+  const makeAttempt = (proxyUrl) => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 12000);
+    return fetch(proxyUrl, { signal: ctrl.signal })
+      .then(res => { clearTimeout(t); if (!res.ok) throw new Error(res.status); return res.text(); })
+      .catch(e  => { clearTimeout(t); throw e; });
+  };
+  try {
+    return await Promise.any(proxies.map(makeAttempt));
+  } catch {
+    return '';
+  }
 }
 
-function proxyUrl(url) {
-  return `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+function gnewsUrl(query) {
+  return `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
 }
 
 function stripHtml(html) {
@@ -189,43 +207,39 @@ function stripHtml(html) {
 }
 
 function cleanTitle(t) {
-  return (t || '').replace(/\s[-–]\s[^-–]{1,40}$/, '').trim();
+  return (t || '').replace(/\s[-–]\s[^-–]{1,50}$/, '').trim();
 }
 
 function relTime(str) {
   const d = new Date(str);
   if (isNaN(d)) return '';
-  const diff = Date.now() - d;
-  const m = Math.floor(diff / 60000);
+  const diff = Date.now() - d, m = Math.floor(diff / 60000);
   if (m < 90)  return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24)  return `${h}h ago`;
   const dy = Math.floor(h / 24);
   if (dy < 8)  return `${dy}d ago`;
-  return d.toLocaleDateString('en-US', { month:'short', day:'numeric', year: dy>300 ? 'numeric' : undefined });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: dy > 300 ? 'numeric' : undefined });
 }
 
 function dedup(arr) {
   const seen = new Set();
   return arr.filter(a => {
-    const k = a.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
+    const k = (a.title || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
     if (!k || seen.has(k)) return false;
-    seen.add(k);
-    return true;
+    seen.add(k); return true;
   });
 }
 
-function parseXML(xmlStr, feed, feedUrl) {
+function parseXml(xmlStr, feed, feedUrl) {
   try {
     const doc = new DOMParser().parseFromString(xmlStr, 'application/xml');
     if (doc.querySelector('parsererror')) return [];
     const items = Array.from(doc.querySelectorAll('item'));
     if (!items.length) return [];
-
-    return items.slice(0, 35).map(el => {
+    return items.slice(0, 40).map(el => {
       const title = cleanTitle(el.querySelector('title')?.textContent?.trim() || '');
-      if (!title || title.length < 5) return null;
-
+      if (!title || title.length < 6) return null;
       let link = '';
       const linkEl = el.querySelector('link');
       if (linkEl) {
@@ -238,17 +252,13 @@ function parseXML(xmlStr, feed, feedUrl) {
       if (!link || !link.startsWith('http')) {
         link = el.querySelector('guid')?.textContent?.trim() || '#';
       }
-
-      const sourceEl = el.querySelector('source');
-      let source = sourceEl?.textContent?.trim() || '';
+      let source = el.querySelector('source')?.textContent?.trim() || '';
       if (!source) {
         try { source = new URL(feedUrl).hostname.replace('www.', ''); } catch { source = feed.label; }
       }
-
-      const date = el.querySelector('pubDate')?.textContent?.trim() || '';
-      const desc = el.querySelector('description')?.textContent?.trim() || '';
+      const date    = el.querySelector('pubDate')?.textContent?.trim() || '';
+      const desc    = el.querySelector('description')?.textContent?.trim() || '';
       const excerpt = stripHtml(desc).slice(0, 220);
-
       return { feedId: feed.id, feed, title, link, source, date, excerpt };
     }).filter(Boolean);
   } catch {
@@ -258,42 +268,25 @@ function parseXML(xmlStr, feed, feedUrl) {
 
 async function fetchSource(source, feed) {
   const url = source.type === 'gnews' ? gnewsUrl(source.query) : source.url;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 14000);
-  try {
-    const res = await fetch(proxyUrl(url), { signal: controller.signal });
-    clearTimeout(timer);
-    if (!res.ok) return [];
-    const json = await res.json();
-    const xml = json.contents || '';
-    return parseXML(xml, feed, url);
-  } catch {
-    clearTimeout(timer);
-    return [];
-  }
+  const xml  = await fetchXml(url);
+  return xml ? parseXml(xml, feed, url) : [];
 }
 
 async function loadAll() {
   if (isLoading) return;
   isLoading = true;
-
   const btn = document.getElementById('refresh-btn');
   btn.classList.add('spinning');
-  document.getElementById('status').classList.add('visible');
+  document.getElementById('progress-wrap').classList.add('visible');
+  document.getElementById('progress-bar').style.width = '4%';
+  document.getElementById('status-bar').style.display = 'flex';
+  document.getElementById('status-msg').textContent = 'Fetching…';
   document.getElementById('grid').innerHTML = '';
-
-  const progressWrap = document.getElementById('progress-wrap');
-  const progressBar  = document.getElementById('progress-bar');
-  progressWrap.classList.add('visible');
-  progressBar.style.width = '0%';
-
   allArticles = [];
-
   const allSources = FEEDS.flatMap(feed => feed.sources.map(src => ({ src, feed })));
   const total = allSources.length;
   let done = 0;
-
-  const BATCH = 3;
+  const BATCH = 8;
   for (let i = 0; i < allSources.length; i += BATCH) {
     const batch = allSources.slice(i, i + BATCH);
     await Promise.allSettled(
@@ -301,28 +294,22 @@ async function loadAll() {
         fetchSource(src, feed).then(items => {
           allArticles.push(...items);
           done++;
-          progressBar.style.width = `${Math.round((done / total) * 100)}%`;
+          const pct = Math.round((done / total) * 100);
+          document.getElementById('progress-bar').style.width = `${pct}%`;
           document.getElementById('status-msg').textContent =
-            `Loaded ${allArticles.length} articles so far…`;
+            `${done}/${total} sources · ${allArticles.length} articles`;
+          const sorted = dedup([...allArticles].sort((a, b) => new Date(b.date) - new Date(a.date)));
+          allArticles = sorted;
+          renderTabs();
+          renderGrid();
         })
       )
     );
-    if (i + BATCH < allSources.length) {
-      await new Promise(r => setTimeout(r, 400));
-    }
   }
-
-  allArticles.sort((a, b) => new Date(b.date) - new Date(a.date));
-  allArticles = dedup(allArticles);
-
-  document.getElementById('status').classList.remove('visible');
-  progressWrap.classList.remove('visible');
-
+  document.getElementById('progress-wrap').classList.remove('visible');
+  document.getElementById('status-bar').style.display = 'none';
   document.getElementById('last-updated').textContent =
     'Updated ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-
-  renderTabs();
-  renderGrid();
   btn.classList.remove('spinning');
   isLoading = false;
 }
@@ -335,7 +322,6 @@ function renderTabs() {
       count: allArticles.filter(a => a.feedId === f.id).length
     }))
   ];
-
   document.getElementById('tabs').innerHTML = defs.map(t => `
     <div class="tab ${t.id === activeTab ? 'active' : ''}" onclick="setTab('${t.id}')">
       <span class="tab-dot" style="background:${t.color}"></span>
@@ -349,15 +335,10 @@ function renderGrid() {
   const list = activeTab === 'all'
     ? allArticles
     : allArticles.filter(a => a.feedId === activeTab);
-
   if (!list.length) {
-    grid.innerHTML = `<div class="empty">
-      <span class="empty-icon">📭</span>
-      No articles for this category yet — try hitting Refresh.
-    </div>`;
+    grid.innerHTML = `<div class="empty"><span class="empty-icon">📭</span>Loading articles for this category…</div>`;
     return;
   }
-
   grid.innerHTML = list.map(a => `
     <div class="card">
       <div class="card-top">
