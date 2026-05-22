@@ -16,6 +16,7 @@
       --shadow: 0 1px 3px rgba(22,18,16,.07), 0 2px 8px rgba(22,18,16,.04);
     }
     body { font-family: 'Inter', system-ui, sans-serif; background: var(--cream); color: var(--text); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+
     header { background: var(--charcoal); color: #fff; padding: 14px 20px; position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid #2E2825; }
     .header-left { display: flex; align-items: center; gap: 12px; }
     .logo { width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0; background: var(--terracotta); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: #fff; letter-spacing: -.5px; }
@@ -27,6 +28,7 @@
     #refresh-btn:hover { background: #3A3430; color: #F0EBE1; }
     #refresh-btn.spinning svg { animation: spin .9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
     .tabs-wrap { background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; position: sticky; top: 63px; z-index: 90; }
     .tabs-wrap::-webkit-scrollbar { display: none; }
     .tabs { display: flex; padding: 0 16px; min-width: max-content; }
@@ -35,14 +37,20 @@
     .tab.active { color: var(--terracotta); border-bottom-color: var(--terracotta); }
     .tab-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
     .tab-count { background: var(--cream-dark); color: var(--muted); font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 20px; }
+
     main { max-width: 1120px; margin: 0 auto; padding: 22px 16px 60px; }
-    .alert { border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; display: none; }
-    .alert.visible { display: block; }
-    .alert-warn { background: #FEF9EC; border: 1px solid #F0D98A; color: #7A5B0A; }
-    #status { text-align: center; padding: 60px 20px; color: var(--muted); font-size: 14px; display: none; }
+
+    #progress-wrap { height: 3px; background: var(--border); border-radius: 2px; margin-bottom: 18px; overflow: hidden; display: none; }
+    #progress-wrap.visible { display: block; }
+    #progress-bar { height: 100%; width: 0%; background: var(--terracotta); border-radius: 2px; transition: width .3s ease; }
+
+    #status { text-align: center; padding: 50px 20px; color: var(--muted); font-size: 14px; display: none; }
     #status.visible { display: block; }
-    .spinner { width: 30px; height: 30px; margin: 0 auto 14px; border: 3px solid var(--border); border-top-color: var(--terracotta); border-radius: 50%; animation: spin .75s linear infinite; }
+    .spinner { width: 28px; height: 28px; margin: 0 auto 12px; border: 3px solid var(--border); border-top-color: var(--terracotta); border-radius: 50%; animation: spin .75s linear infinite; }
+    #status-msg { color: var(--muted); font-size: 13px; margin-top: 6px; }
+
     #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 17px; display: flex; flex-direction: column; gap: 9px; transition: box-shadow .15s, transform .15s; }
     .card:hover { box-shadow: 0 4px 18px rgba(22,18,16,.10); transform: translateY(-1px); }
     .card-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
@@ -54,14 +62,22 @@
     .card-excerpt { font-size: 13px; color: var(--muted); line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
     .card-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; padding-top: 4px; }
     .card-date { font-size: 11px; color: var(--muted); }
-    .read-link { font-size: 12px; font-weight: 600; color: var(--terracotta); text-decoration: none; display: flex; align-items: center; gap: 3px; }
+    .read-link { font-size: 12px; font-weight: 600; color: var(--terracotta); text-decoration: none; }
     .read-link:hover { color: var(--terra-dk); }
+
     .empty { grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--muted); font-size: 14px; }
     .empty-icon { font-size: 32px; display: block; margin-bottom: 10px; }
-    @media (max-width: 500px) { header { padding: 10px 14px; } .header-title { font-size: 14px; } #grid { grid-template-columns: 1fr; } .tab { padding: 10px 11px; font-size: 12px; } }
+
+    @media (max-width: 500px) {
+      header { padding: 10px 14px; }
+      .header-title { font-size: 14px; }
+      #grid { grid-template-columns: 1fr; }
+      .tab { padding: 10px 11px; font-size: 12px; }
+    }
   </style>
 </head>
 <body>
+
 <header>
   <div class="header-left">
     <div class="logo">N</div>
@@ -81,126 +97,290 @@
     </button>
   </div>
 </header>
+
 <div class="tabs-wrap"><div class="tabs" id="tabs"></div></div>
+
 <main>
-  <div class="alert alert-warn" id="err-banner">⚠️ Some feeds didn't load. Results may be partial — try refreshing in a moment.</div>
-  <div id="status"><div class="spinner"></div>Fetching latest news…</div>
+  <div id="progress-wrap"><div id="progress-bar"></div></div>
+  <div id="status">
+    <div class="spinner"></div>
+    <div>Loading your intelligence feed…</div>
+    <div id="status-msg"></div>
+  </div>
   <div id="grid"></div>
 </main>
+
 <script>
 const FEEDS = [
-  { id:'nsl', label:'Near Space Labs', color:'#CC6847', bg:'#FDF2EC', sources:[
-    { type:'gnews', query:'"Near Space Labs"' },
-    { type:'gnews', query:'Near Space Labs Swift stratosphere balloon imaging' },
-  ]},
-  { id:'competitors', label:'Competitors', color:'#5C4E44', bg:'#F5F0E8', sources:[
-    { type:'gnews', query:'Nearmap aerial imagery OR geospatial' },
-    { type:'gnews', query:'EagleView aerial geospatial OR Vexcel Imaging' },
-    { type:'gnews', query:'Nearmap OR EagleView OR Vexcel earnings OR contract OR expansion 2024' },
-  ]},
-  { id:'general', label:'General', hidden:true, color:'#3B6E8A', bg:'#EFF6FB', sources:[
-    { type:'gnews', query:'"geospatial intelligence" OR GEOINT "earth observation" commercial' },
-    { type:'gnews', query:'"commercial remote sensing" satellite imagery market Planet Labs OR Maxar OR Airbus' },
-    { type:'gnews', query:'"earth observation" satellite imagery funding OR acquisition OR launch' },
-    { type:'gnews', query:'orthoimagery OR "aerial imagery" geospatial technology industry' },
-    { type:'rss',   url:'https://geospatialworld.net/feed/' },
-    { type:'rss',   url:'https://www.gim-international.com/rss.xml' },
-  ]},
-  { id:'insurance', label:'P&C Insurance', color:'#2E6B50', bg:'#EDFAF4', sources:[
-    { type:'gnews', query:'property insurance aerial imagery OR satellite imagery underwriting technology' },
-    { type:'gnews', query:'insurtech "property risk" OR "roof inspection" OR "claims automation"' },
-    { type:'rss',   url:'https://www.insurancejournal.com/news/national/feed/' },
-    { type:'rss',   url:'https://www.propertycasualty360.com/feed/' },
-  ]},
-  { id:'government', label:'Gov & Public Sector', color:'#7A2020', bg:'#FDF0F0', sources:[
-    { type:'gnews', query:'government GIS geospatial aerial mapping state local procurement' },
-    { type:'gnews', query:'"smart city" OR "urban planning" geospatial satellite technology' },
-    { type:'rss',   url:'https://www.govtech.com/rss.xml' },
-    { type:'rss',   url:'https://www.route-fifty.com/feed/' },
-  ]},
-  { id:'energy', label:'Energy & Utilities', color:'#8A4A1A', bg:'#FBF4EC', sources:[
-    { type:'gnews', query:'utility aerial inspection "vegetation management" OR "grid monitoring" geospatial' },
-    { type:'gnews', query:'energy infrastructure monitoring satellite OR aerial imaging technology' },
-    { type:'rss',   url:'https://www.utilitydive.com/feeds/news/' },
-    { type:'rss',   url:'https://www.tdworld.com/rss/all' },
-  ]},
-  { id:'forestry', label:'Forestry & Environment', color:'#2A6630', bg:'#EEF8EF', sources:[
-    { type:'gnews', query:'wildfire detection forest monitoring aerial imagery OR satellite' },
-    { type:'gnews', query:'"carbon offset" OR "carbon credit" forest verification remote sensing' },
-    { type:'gnews', query:'environmental monitoring geospatial satellite "habitat" OR "biodiversity"' },
-    { type:'rss',   url:'https://news.mongabay.com/feed/' },
-  ]},
+  {
+    id:'nsl', label:'Near Space Labs', color:'#CC6847', bg:'#FDF2EC',
+    sources:[
+      { type:'gnews', query:'"Near Space Labs"' },
+      { type:'gnews', query:'Near Space Labs stratosphere balloon Swift aerial imaging' },
+    ]
+  },
+  {
+    id:'competitors', label:'Competitors', color:'#5C4E44', bg:'#F5F0E8',
+    sources:[
+      { type:'gnews', query:'Nearmap aerial imagery property geospatial insurance' },
+      { type:'gnews', query:'EagleView Vexcel property data aerial imagery' },
+      { type:'gnews', query:'Maxar Planet Labs commercial aerial satellite imagery geospatial analytics' },
+    ]
+  },
+  {
+    id:'general', label:'General', hidden:true, color:'#3B6E8A', bg:'#EFF6FB',
+    sources:[
+      { type:'gnews', query:'"earth observation" commercial aerial satellite imagery analytics' },
+      { type:'gnews', query:'geospatial intelligence GEOINT remote sensing aerial data' },
+      { type:'rss',   url:'https://geospatialworld.net/feed/' },
+      { type:'rss',   url:'https://www.gim-international.com/rss.xml' },
+    ]
+  },
+  {
+    id:'insurance', label:'P&C Insurance', color:'#2E6B50', bg:'#EDFAF4',
+    sources:[
+      { type:'gnews', query:'property casualty insurance aerial imagery roof inspection technology' },
+      { type:'gnews', query:'insurance underwriting geospatial data remote sensing catastrophe modeling' },
+      { type:'gnews', query:'insurtech property claims aerial satellite imagery assessment' },
+    ]
+  },
+  {
+    id:'government', label:'Gov & Public Sector', color:'#7A2020', bg:'#FDF0F0',
+    sources:[
+      { type:'rss',   url:'https://www.govtech.com/rss.xml' },
+      { type:'gnews', query:'government geospatial GIS aerial imagery state local emergency management' },
+      { type:'gnews', query:'public sector mapping infrastructure remote sensing aerial procurement' },
+    ]
+  },
+  {
+    id:'energy', label:'Energy & Utilities', color:'#8A4A1A', bg:'#FBF4EC',
+    sources:[
+      { type:'rss',   url:'https://www.utilitydive.com/feeds/news/' },
+      { type:'gnews', query:'utility aerial inspection imagery vegetation management power line monitoring' },
+      { type:'gnews', query:'energy infrastructure remote sensing drone aerial survey grid resilience' },
+    ]
+  },
+  {
+    id:'forestry', label:'Forestry & Environment', color:'#2A6630', bg:'#EEF8EF',
+    sources:[
+      { type:'rss',   url:'https://news.mongabay.com/feed/' },
+      { type:'gnews', query:'wildfire forest monitoring aerial remote sensing carbon mapping' },
+      { type:'gnews', query:'environmental monitoring deforestation satellite aerial imagery carbon offset' },
+    ]
+  },
 ];
 
-let allArticles=[], activeTab='all', isLoading=false;
+let allArticles = [];
+let activeTab   = 'all';
+let isLoading   = false;
 
-function gnewsRssUrl(q){ return `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`; }
-function rss2jsonUrl(u){ return `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(u)}&count=40`; }
-function alloriginsUrl(u){ return `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`; }
-function stripHtml(h){ const d=document.createElement('div'); d.innerHTML=h||''; return (d.textContent||'').trim(); }
-function cleanTitle(t){ return t.replace(/\s[-–]\s[^-–]+$/,'').trim(); }
-function extractSource(item){ if(item.author&&!item.author.includes('@')) return item.author; try{ return new URL(item.link||'').hostname.replace('www.',''); }catch{ return ''; } }
-function relTime(s){ const d=new Date(s); if(isNaN(d)) return ''; const diff=Date.now()-d, m=Math.floor(diff/60000); if(m<90) return `${m}m ago`; const h=Math.floor(m/60); if(h<24) return `${h}h ago`; const dy=Math.floor(h/24); if(dy<8) return `${dy}d ago`; return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:dy>365?'numeric':undefined}); }
-function dedup(arr){ const s=new Set(); return arr.filter(a=>{ const k=a.title.toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,55); if(!k||s.has(k)) return false; s.add(k); return true; }); }
-
-async function fetchViaRss2json(rssUrl, feed){
-  const res=await fetch(rss2jsonUrl(rssUrl),{signal:AbortSignal.timeout(8000)});
-  if(!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json=await res.json();
-  if(json.status!=='ok'||!Array.isArray(json.items)) throw new Error('bad');
-  return json.items.map(item=>({ feedId:feed.id, feed, title:cleanTitle(item.title||''), link:item.link||item.guid||'#', source:extractSource(item), date:item.pubDate||'', excerpt:stripHtml(item.description||item.content||'').slice(0,220) }));
+function gnewsUrl(query) {
+  return `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
 }
 
-async function fetchViaAllorigins(rssUrl, feed){
-  const res=await fetch(alloriginsUrl(rssUrl),{signal:AbortSignal.timeout(10000)});
-  if(!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json=await res.json();
-  const doc=new DOMParser().parseFromString(json.contents||'','application/xml');
-  return Array.from(doc.querySelectorAll('item')).slice(0,40).map(el=>{
-    const g=t=>el.querySelector(t)?.textContent?.trim()||'';
-    return { feedId:feed.id, feed, title:cleanTitle(g('title')), link:g('link')||el.querySelector('guid')?.textContent||'#', source:g('source')||(new URL(rssUrl).hostname.replace('www.','')), date:g('pubDate'), excerpt:stripHtml(g('description')||g('content\\:encoded')).slice(0,220) };
-  }).filter(a=>a.title);
+function proxyUrl(url) {
+  return `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
 }
 
-async function fetchSource(source, feed){
-  const rssUrl=source.type==='gnews'?gnewsRssUrl(source.query):source.url;
-  try{ return await fetchViaRss2json(rssUrl,feed); }
-  catch{ try{ return await fetchViaAllorigins(rssUrl,feed); } catch{ return []; } }
+function stripHtml(html) {
+  const d = document.createElement('div');
+  d.innerHTML = html || '';
+  return (d.textContent || '').trim();
 }
 
-async function loadAll(){
-  if(isLoading) return; isLoading=true;
-  const btn=document.getElementById('refresh-btn');
+function cleanTitle(t) {
+  return (t || '').replace(/\s[-–]\s[^-–]{1,40}$/, '').trim();
+}
+
+function relTime(str) {
+  const d = new Date(str);
+  if (isNaN(d)) return '';
+  const diff = Date.now() - d;
+  const m = Math.floor(diff / 60000);
+  if (m < 90)  return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24)  return `${h}h ago`;
+  const dy = Math.floor(h / 24);
+  if (dy < 8)  return `${dy}d ago`;
+  return d.toLocaleDateString('en-US', { month:'short', day:'numeric', year: dy>300 ? 'numeric' : undefined });
+}
+
+function dedup(arr) {
+  const seen = new Set();
+  return arr.filter(a => {
+    const k = a.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+function parseXML(xmlStr, feed, feedUrl) {
+  try {
+    const doc = new DOMParser().parseFromString(xmlStr, 'application/xml');
+    if (doc.querySelector('parsererror')) return [];
+    const items = Array.from(doc.querySelectorAll('item'));
+    if (!items.length) return [];
+
+    return items.slice(0, 35).map(el => {
+      const title = cleanTitle(el.querySelector('title')?.textContent?.trim() || '');
+      if (!title || title.length < 5) return null;
+
+      let link = '';
+      const linkEl = el.querySelector('link');
+      if (linkEl) {
+        link = linkEl.textContent?.trim() || '';
+        if (!link || !link.startsWith('http')) {
+          const ns = linkEl.nextSibling;
+          if (ns && ns.nodeType === 3) link = ns.textContent?.trim() || '';
+        }
+      }
+      if (!link || !link.startsWith('http')) {
+        link = el.querySelector('guid')?.textContent?.trim() || '#';
+      }
+
+      const sourceEl = el.querySelector('source');
+      let source = sourceEl?.textContent?.trim() || '';
+      if (!source) {
+        try { source = new URL(feedUrl).hostname.replace('www.', ''); } catch { source = feed.label; }
+      }
+
+      const date = el.querySelector('pubDate')?.textContent?.trim() || '';
+      const desc = el.querySelector('description')?.textContent?.trim() || '';
+      const excerpt = stripHtml(desc).slice(0, 220);
+
+      return { feedId: feed.id, feed, title, link, source, date, excerpt };
+    }).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchSource(source, feed) {
+  const url = source.type === 'gnews' ? gnewsUrl(source.query) : source.url;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 14000);
+  try {
+    const res = await fetch(proxyUrl(url), { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const xml = json.contents || '';
+    return parseXML(xml, feed, url);
+  } catch {
+    clearTimeout(timer);
+    return [];
+  }
+}
+
+async function loadAll() {
+  if (isLoading) return;
+  isLoading = true;
+
+  const btn = document.getElementById('refresh-btn');
   btn.classList.add('spinning');
   document.getElementById('status').classList.add('visible');
-  document.getElementById('grid').innerHTML='';
-  document.getElementById('err-banner').classList.remove('visible');
-  allArticles=[];
-  let failures=0;
-  const total=FEEDS.reduce((n,f)=>n+f.sources.length,0);
-  await Promise.allSettled(FEEDS.flatMap(feed=>feed.sources.map(src=>fetchSource(src,feed).then(items=>allArticles.push(...items)).catch(()=>failures++))));
-  allArticles.sort((a,b)=>new Date(b.date)-new Date(a.date));
-  allArticles=dedup(allArticles);
+  document.getElementById('grid').innerHTML = '';
+
+  const progressWrap = document.getElementById('progress-wrap');
+  const progressBar  = document.getElementById('progress-bar');
+  progressWrap.classList.add('visible');
+  progressBar.style.width = '0%';
+
+  allArticles = [];
+
+  const allSources = FEEDS.flatMap(feed => feed.sources.map(src => ({ src, feed })));
+  const total = allSources.length;
+  let done = 0;
+
+  const BATCH = 3;
+  for (let i = 0; i < allSources.length; i += BATCH) {
+    const batch = allSources.slice(i, i + BATCH);
+    await Promise.allSettled(
+      batch.map(({ src, feed }) =>
+        fetchSource(src, feed).then(items => {
+          allArticles.push(...items);
+          done++;
+          progressBar.style.width = `${Math.round((done / total) * 100)}%`;
+          document.getElementById('status-msg').textContent =
+            `Loaded ${allArticles.length} articles so far…`;
+        })
+      )
+    );
+    if (i + BATCH < allSources.length) {
+      await new Promise(r => setTimeout(r, 400));
+    }
+  }
+
+  allArticles.sort((a, b) => new Date(b.date) - new Date(a.date));
+  allArticles = dedup(allArticles);
+
   document.getElementById('status').classList.remove('visible');
-  if(failures>total*0.4) document.getElementById('err-banner').classList.add('visible');
-  document.getElementById('last-updated').textContent='Updated '+new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-  renderTabs(); renderGrid();
-  btn.classList.remove('spinning'); isLoading=false;
+  progressWrap.classList.remove('visible');
+
+  document.getElementById('last-updated').textContent =
+    'Updated ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+  renderTabs();
+  renderGrid();
+  btn.classList.remove('spinning');
+  isLoading = false;
 }
 
-function renderTabs(){
-  const defs=[{id:'all',label:'All',color:'#1A1511',count:allArticles.length},...FEEDS.filter(f=>!f.hidden).map(f=>({id:f.id,label:f.label,color:f.color,count:allArticles.filter(a=>a.feedId===f.id).length}))];
-  document.getElementById('tabs').innerHTML=defs.map(t=>`<div class="tab ${t.id===activeTab?'active':''}" onclick="setTab('${t.id}')"><span class="tab-dot" style="background:${t.color}"></span>${t.label}<span class="tab-count">${t.count}</span></div>`).join('');
+function renderTabs() {
+  const defs = [
+    { id: 'all', label: 'All', color: '#1A1511', count: allArticles.length },
+    ...FEEDS.filter(f => !f.hidden).map(f => ({
+      id: f.id, label: f.label, color: f.color,
+      count: allArticles.filter(a => a.feedId === f.id).length
+    }))
+  ];
+
+  document.getElementById('tabs').innerHTML = defs.map(t => `
+    <div class="tab ${t.id === activeTab ? 'active' : ''}" onclick="setTab('${t.id}')">
+      <span class="tab-dot" style="background:${t.color}"></span>
+      ${t.label}
+      <span class="tab-count">${t.count}</span>
+    </div>`).join('');
 }
 
-function renderGrid(){
-  const grid=document.getElementById('grid');
-  const list=activeTab==='all'?allArticles:allArticles.filter(a=>a.feedId===activeTab);
-  if(!list.length){ grid.innerHTML=`<div class="empty"><span class="empty-icon">📭</span>No articles loaded — hit Refresh to try again.</div>`; return; }
-  grid.innerHTML=list.map(a=>`<div class="card"><div class="card-top"><span class="badge" style="color:${a.feed.color};background:${a.feed.bg}">${a.feed.label}</span><span class="card-src">${a.source}</span></div><div class="card-title"><a href="${a.link}" target="_blank" rel="noopener">${a.title}</a></div>${a.excerpt?`<div class="card-excerpt">${a.excerpt}</div>`:''}<div class="card-foot"><span class="card-date">${relTime(a.date)}</span><a class="read-link" href="${a.link}" target="_blank" rel="noopener">Read →</a></div></div>`).join('');
+function renderGrid() {
+  const grid = document.getElementById('grid');
+  const list = activeTab === 'all'
+    ? allArticles
+    : allArticles.filter(a => a.feedId === activeTab);
+
+  if (!list.length) {
+    grid.innerHTML = `<div class="empty">
+      <span class="empty-icon">📭</span>
+      No articles for this category yet — try hitting Refresh.
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = list.map(a => `
+    <div class="card">
+      <div class="card-top">
+        <span class="badge" style="color:${a.feed.color};background:${a.feed.bg}">${a.feed.label}</span>
+        <span class="card-src">${a.source}</span>
+      </div>
+      <div class="card-title">
+        <a href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
+      </div>
+      ${a.excerpt ? `<div class="card-excerpt">${a.excerpt}</div>` : ''}
+      <div class="card-foot">
+        <span class="card-date">${relTime(a.date)}</span>
+        <a class="read-link" href="${a.link}" target="_blank" rel="noopener">Read →</a>
+      </div>
+    </div>`).join('');
 }
 
-function setTab(id){ activeTab=id; renderTabs(); renderGrid(); }
+function setTab(id) {
+  activeTab = id;
+  renderTabs();
+  renderGrid();
+}
+
 loadAll();
 </script>
 </body>
