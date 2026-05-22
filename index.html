@@ -118,13 +118,13 @@
 
 <script>
 // ---------- CONFIG ----------
-const CACHE_KEY = 'nsl_feed_cache_v2';
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const FETCH_TIMEOUT_MS = 9000;       // per-proxy abort
+const CACHE_KEY = 'nsl_feed_cache_v3';
+const CACHE_TTL_MS = 10 * 60 * 1000;  // 10 minutes
+const FETCH_TIMEOUT_MS = 9000;
 const BATCH_SIZE = 12;
 
-// Industry-level relevance terms. An article must contain at least one of these
-// in title or excerpt to be considered on-topic for NSL.
+// Relevance keyword list — used ONLY to filter Google News results, not RSS feeds.
+// RSS feeds from curated trade publications are trusted as already on-topic.
 const INDUSTRY_TERMS = [
   'aerial', 'satellite', 'geospatial', 'imagery', 'remote sensing',
   'earth observation', 'drone', 'uav', 'lidar', 'gis', 'mapping',
@@ -132,32 +132,35 @@ const INDUSTRY_TERMS = [
   'overhead', 'photogrammetry', 'geoint', 'eagleview', 'nearmap',
   'vexcel', 'maxar', 'planet labs', 'blacksky', 'near space labs',
   'roof inspection', 'vegetation management', 'aerial inspection',
-  'aerial survey', 'aerial photography', 'aerial data'
+  'aerial survey', 'aerial photography', 'aerial data', 'aerial mapping',
+  'satellite imagery', 'wildfire', 'deforestation', 'forest monitoring',
+  'crop monitoring', 'precision agriculture', 'land use', 'land cover',
+  'spatial data', 'cartography', 'orthophoto', 'mosaic', 'airborne',
+  'surveying', 'topograph', 'elevation model', 'dem', 'dsm', 'point cloud'
 ];
 
 const FEEDS = [
   {
     id: 'nsl', label: 'Near Space Labs', color: '#CC6847', bg: '#FDF2EC',
-    // Company tab: always show NSL mentions even if no other industry term hits.
-    bypassRelevance: true,
     sources: [
-      { type: 'gnews', query: '"Near Space Labs"' },
-      { type: 'gnews', query: '"Near Space Labs" Swift OR balloon OR stratosphere' },
+      { type: 'gnews', query: '"Near Space Labs"', bypassRelevance: true },
+      { type: 'gnews', query: '"Near Space Labs" Swift OR balloon OR stratosphere', bypassRelevance: true },
     ]
   },
   {
     id: 'competitors', label: 'Competitors', color: '#5C4E44', bg: '#F5F0E8',
     sources: [
-      { type: 'gnews', query: 'Nearmap aerial OR imagery OR property -stock' },
-      { type: 'gnews', query: '(EagleView OR Vexcel) aerial OR imagery OR property' },
-      { type: 'gnews', query: '(Maxar OR "Planet Labs" OR BlackSky) satellite OR imagery -stock -earnings' },
+      // Named competitor queries — name match is sufficient relevance signal
+      { type: 'gnews', query: 'Nearmap', bypassRelevance: true },
+      { type: 'gnews', query: 'EagleView OR Vexcel', bypassRelevance: true },
+      { type: 'gnews', query: '(Maxar OR "Planet Labs" OR BlackSky) -stock -earnings', bypassRelevance: true },
     ]
   },
   {
     id: 'general', label: 'General', hidden: true, color: '#3B6E8A', bg: '#EFF6FB',
     sources: [
-      { type: 'gnews', query: '"earth observation" OR GEOINT commercial imagery' },
-      { type: 'gnews', query: 'geospatial remote sensing aerial analytics' },
+      { type: 'gnews', query: '"earth observation" commercial imagery' },
+      { type: 'gnews', query: 'geospatial remote sensing aerial' },
       { type: 'rss', url: 'https://geospatialworld.net/feed/' },
       { type: 'rss', url: 'https://www.gim-international.com/rss.xml' },
     ]
@@ -166,8 +169,8 @@ const FEEDS = [
     id: 'insurance', label: 'P&C Insurance', color: '#2E6B50', bg: '#EDFAF4',
     sources: [
       { type: 'rss', url: 'https://insuranceinnovationreporter.com/feed/' },
-      { type: 'gnews', query: 'property insurance aerial imagery roof inspection -auto -health -workers -life' },
-      { type: 'gnews', query: 'catastrophe modeling "property risk" satellite OR aerial claims -auto -health' },
+      { type: 'gnews', query: 'property insurance aerial OR satellite imagery roof' },
+      { type: 'gnews', query: 'catastrophe modeling insurtech "property risk"' },
     ]
   },
   {
@@ -175,7 +178,7 @@ const FEEDS = [
     sources: [
       { type: 'rss', url: 'https://www.govtech.com/rss.xml' },
       { type: 'rss', url: 'https://statetechmagazine.com/rss.xml' },
-      { type: 'gnews', query: 'government GIS aerial OR satellite imagery emergency management -military' },
+      { type: 'gnews', query: 'government GIS aerial imagery emergency management' },
     ]
   },
   {
@@ -183,7 +186,7 @@ const FEEDS = [
     sources: [
       { type: 'rss', url: 'https://www.utilitydive.com/feeds/news/' },
       { type: 'rss', url: 'https://www.tdworld.com/rss/all' },
-      { type: 'gnews', query: 'utility ("vegetation management" OR "aerial inspection") power line OR grid -earnings' },
+      { type: 'gnews', query: 'utility "vegetation management" OR "aerial inspection" grid' },
     ]
   },
   {
@@ -191,7 +194,7 @@ const FEEDS = [
     sources: [
       { type: 'rss', url: 'https://news.mongabay.com/feed/' },
       { type: 'rss', url: 'https://www.carbonbrief.org/feed/' },
-      { type: 'gnews', query: '(wildfire OR deforestation) monitoring aerial OR satellite OR remote sensing' },
+      { type: 'gnews', query: 'wildfire OR deforestation aerial OR satellite monitoring' },
     ]
   },
 ];
@@ -224,8 +227,8 @@ async function fetchXml(url) {
 
 // ---------- URL BUILDERS ----------
 function gnewsUrl(query) {
-  // when:7d restricts to last 7 days — dramatically improves freshness/relevance
-  const q = `${query} when:7d`;
+  // when:14d gives a 2-week window — wide enough for niche topics, narrow enough to stay fresh
+  const q = `${query} when:14d`;
   return `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
 }
 
@@ -237,7 +240,6 @@ function stripHtml(html) {
 }
 
 function cleanTitle(t) {
-  // Strip trailing " - Publisher Name" that Google News appends
   return (t || '').replace(/\s[-–]\s[^-–]{1,50}$/, '').trim();
 }
 
@@ -253,7 +255,6 @@ function relTime(str) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: dy > 300 ? 'numeric' : undefined });
 }
 
-// Returns timestamp for sorting; articles without dates sort to the bottom.
 function tsFor(a) {
   const t = new Date(a.date).getTime();
   return isNaN(t) ? 0 : t;
@@ -268,9 +269,15 @@ function dedup(arr) {
   });
 }
 
-// Relevance scoring: does the article touch the geospatial/aerial industry?
+// Relevance is now per-SOURCE, not per-feed. RSS feeds skip it entirely;
+// Google News queries get filtered unless explicitly marked bypassRelevance.
+function shouldFilter(source) {
+  if (source.type === 'rss') return false;
+  if (source.bypassRelevance) return false;
+  return true;
+}
+
 function isRelevant(article) {
-  if (article.feed.bypassRelevance) return true;
   const blob = `${article.title} ${article.excerpt}`.toLowerCase();
   return INDUSTRY_TERMS.some(term => blob.includes(term));
 }
@@ -285,7 +292,6 @@ function parseXml(xmlStr, feed, feedUrl) {
       const title = cleanTitle(el.querySelector('title')?.textContent?.trim() || '');
       if (!title || title.length < 6) return null;
 
-      // Google News quirk: link URL is a sibling text node of <link>, not its content
       let link = '';
       const linkEl = el.querySelector('link');
       if (linkEl) {
@@ -317,8 +323,11 @@ async function fetchSource(source, feed) {
   const url = source.type === 'gnews' ? gnewsUrl(source.query) : source.url;
   const xml = await fetchXml(url);
   if (!xml) return [];
-  const parsed = parseXml(xml, feed, url);
-  return parsed.filter(isRelevant);
+  let parsed = parseXml(xml, feed, url);
+  if (shouldFilter(source)) {
+    parsed = parsed.filter(isRelevant);
+  }
+  return parsed;
 }
 
 // ---------- CACHE ----------
@@ -328,7 +337,6 @@ function readCache() {
     if (!raw) return null;
     const obj = JSON.parse(raw);
     if (!obj || !obj.savedAt || Date.now() - obj.savedAt > CACHE_TTL_MS) return null;
-    // Re-link feed reference (can't serialize the feed object cleanly)
     const feedById = Object.fromEntries(FEEDS.map(f => [f.id, f]));
     obj.articles = (obj.articles || []).map(a => ({ ...a, feed: feedById[a.feedId] })).filter(a => a.feed);
     return obj;
@@ -339,11 +347,9 @@ function readCache() {
 
 function writeCache(articles) {
   try {
-    const slim = articles.map(({ feed, ...rest }) => rest); // strip feed ref for storage
+    const slim = articles.map(({ feed, ...rest }) => rest);
     sessionStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), articles: slim }));
-  } catch {
-    // sessionStorage may be full or disabled — fail silently
-  }
+  } catch {}
 }
 
 // ---------- LOAD ----------
@@ -359,14 +365,13 @@ async function loadAll(opts = {}) {
   const statusMsg = document.getElementById('status-msg');
   const cacheBadge = document.getElementById('cache-badge');
 
-  // Try cache first
   if (useCache) {
     const cached = readCache();
     if (cached && cached.articles.length) {
       allArticles = cached.articles;
       cacheBadge.classList.add('visible');
       statusBar.style.display = 'flex';
-      statusMsg.textContent = `${allArticles.length} articles · cached ${relTime(new Date(cached.savedAt).toISOString())}`;
+      statusMsg.textContent = `${allArticles.length} articles · cached`;
       document.querySelector('.dot-loader').style.display = 'none';
       document.getElementById('last-updated').textContent =
         'Updated ' + new Date(cached.savedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -377,7 +382,6 @@ async function loadAll(opts = {}) {
     }
   }
 
-  // Live fetch
   cacheBadge.classList.remove('visible');
   document.querySelector('.dot-loader').style.display = 'flex';
   btn.classList.add('spinning');
@@ -400,8 +404,6 @@ async function loadAll(opts = {}) {
           allArticles.push(...items);
           done++;
           progressBar.style.width = `${Math.round((done / total) * 100)}%`;
-
-          // Sort + dedup once per batch completion (not per source)
           allArticles = dedup([...allArticles].sort((a, b) => tsFor(b) - tsFor(a)));
           statusMsg.textContent = `${done}/${total} sources · ${allArticles.length} articles`;
           renderTabs();
@@ -447,7 +449,7 @@ function renderGrid() {
   if (!list.length) {
     const msg = isLoading
       ? 'Loading articles for this category…'
-      : 'No relevant articles found in the last 7 days. Try refreshing.';
+      : 'No articles found. Try refreshing.';
     grid.innerHTML = `<div class="empty"><span class="empty-icon">📭</span>${msg}</div>`;
     return;
   }
@@ -476,13 +478,15 @@ function setTab(id) {
 }
 
 // ---------- EVENT WIRING ----------
-document.getElementById('refresh-btn').addEventListener('click', () => loadAll({ useCache: false }));
+document.getElementById('refresh-btn').addEventListener('click', () => {
+  sessionStorage.removeItem(CACHE_KEY); // force fresh fetch
+  loadAll({ useCache: false });
+});
 document.getElementById('tabs').addEventListener('click', (e) => {
   const tab = e.target.closest('[data-tab]');
   if (tab) setTab(tab.dataset.tab);
 });
 
-// First load: use cache if available, else fetch live
 loadAll({ useCache: true });
 </script>
 </body>
