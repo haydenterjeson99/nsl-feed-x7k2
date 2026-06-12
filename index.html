@@ -192,8 +192,23 @@ const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;          // auto-skip refresh if <10
 // NSL + Competitors tabs, (2) relevance scoring for all verticals.
 // ============================================================
 const SEO_KEYWORDS = [
-  // 'example: high resolution aerial imagery',
-  // 'example: orthoimagery provider',
+  'accurate property imagery',
+  'current roof imagery',
+  'property damage assessment',
+  'aerial imagery insurance underwriting',
+  'roof condition assessment',
+  'property risk assessment',
+  'pre-event baseline imagery',
+  'rapid damage assessment',
+  'property imagery for underwriters',
+  'consistent property data',
+  'property intelligence',
+  'high resolution property imagery',
+  '7cm',
+  'nationwide property coverage',
+  'imagery underwriting',
+  'spexi',
+  'pictometry',
 ];
 
 // Soft relevance terms — applied to broad vertical queries
@@ -244,7 +259,9 @@ const FEEDS = [
       { type: 'bing', query: '"Satellogic"', tag: 'competitor' },
       { type: 'bing', query: '"Zeitview"', tag: 'competitor' },
       { type: 'bing', query: '"DroneDeploy"', tag: 'competitor' },
-      { type: 'gdelt', query: '("Nearmap" OR "EagleView" OR "Vexcel Imaging" OR "Zeitview" OR "DroneDeploy")', tag: 'competitor' },
+      { type: 'bing', query: '"Spexi"', tag: 'competitor' },
+      { type: 'bing', query: '"Pictometry"', tag: 'competitor' },
+      { type: 'gdelt', query: '("Nearmap" OR "EagleView" OR "Vexcel Imaging" OR "Zeitview" OR "Spexi")', tag: 'competitor' },
       { type: 'gdelt', query: '("Planet Labs" OR "BlackSky" OR "Satellogic")', tag: 'competitor' },
     ]
   },
@@ -343,10 +360,15 @@ const FEEDS = [
     ]
   },
 ];
-// Extra discovery from SEO keywords → searched as NSL-market queries.
-const KEYWORD_SOURCES = SEO_KEYWORDS.slice(0, 12).map(k => ({
-  feedId: 'industry', src: { type: 'bing', query: k, tag: 'vertical' }
-}));
+// Extra discovery built from the Google Ads intent phrases,
+// each routed to the tab where matches belong.
+const KEYWORD_SOURCES = [
+  { feedId: 'insurance', src: { type: 'bing', query: '"property intelligence" insurance imagery', tag: 'vertical' } },
+  { feedId: 'insurance', src: { type: 'bing', query: 'property damage assessment aerial imagery', tag: 'vertical' } },
+  { feedId: 'insurance', src: { type: 'bing', query: 'underwriting property imagery high resolution', tag: 'vertical' } },
+  { feedId: 'insurance', src: { type: 'bing', query: 'rapid damage assessment imagery catastrophe', tag: 'vertical' } },
+  { feedId: 'roofing',   src: { type: 'bing', query: 'roof condition assessment imagery', tag: 'vertical' } },
+];
 
 const FEED_BY_ID = Object.fromEntries(FEEDS.map(f => [f.id, f]));
 
