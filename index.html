@@ -16,7 +16,6 @@
       --shadow: 0 1px 3px rgba(22,18,16,.07), 0 2px 8px rgba(22,18,16,.04);
     }
     body { font-family: 'Inter', system-ui, sans-serif; background: var(--cream); color: var(--text); min-height: 100vh; -webkit-font-smoothing: antialiased; }
-
     header { background: var(--charcoal); color: #fff; padding: 14px 20px; position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid #2E2825; }
     .header-left { display: flex; align-items: center; gap: 12px; }
     .logo { width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0; background: var(--terracotta); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: #fff; letter-spacing: -.5px; }
@@ -24,11 +23,12 @@
     .header-sub { font-size: 11px; color: #9E948A; margin-top: 1px; }
     .header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
     #last-updated { font-size: 11px; color: #7A706A; }
+    #offline-pill { font-size: 10px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; padding: 2px 8px; border-radius: 20px; background: #4A3520; color: #E8B86D; display: none; }
+    #offline-pill.visible { display: inline-block; }
     #refresh-btn { background: var(--charcoal-mid); color: #C8BEB4; border: 1px solid #3A3430; border-radius: 8px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: background .15s, color .15s; font-family: inherit; }
     #refresh-btn:hover { background: #3A3430; color: #F0EBE1; }
     #refresh-btn.spinning svg { animation: spin .9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-
     .tabs-wrap { background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; position: sticky; top: 63px; z-index: 90; }
     .tabs-wrap::-webkit-scrollbar { display: none; }
     .tabs { display: flex; padding: 0 16px; min-width: max-content; }
@@ -37,13 +37,10 @@
     .tab.active { color: var(--terracotta); border-bottom-color: var(--terracotta); }
     .tab-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
     .tab-count { background: var(--cream-dark); color: var(--muted); font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 20px; }
-
     main { max-width: 1120px; margin: 0 auto; padding: 22px 16px 60px; }
-
     #progress-wrap { height: 3px; background: var(--border); border-radius: 2px; margin-bottom: 18px; overflow: hidden; display: none; }
     #progress-wrap.visible { display: block; }
     #progress-bar { height: 100%; width: 4%; background: var(--terracotta); border-radius: 2px; transition: width .4s ease; }
-
     #status-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; min-height: 20px; }
     #status-msg { font-size: 12px; color: var(--muted); }
     #cache-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; background: var(--terra-lt); color: var(--terra-dk); text-transform: uppercase; letter-spacing: .4px; display: none; }
@@ -53,12 +50,15 @@
     .dot-loader span:nth-child(2) { animation-delay: .2s; }
     .dot-loader span:nth-child(3) { animation-delay: .4s; }
     @keyframes bounce { 0%,80%,100% { transform: scale(.6); opacity:.4; } 40% { transform: scale(1); opacity:1; } }
-
     #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
-
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 17px; display: flex; flex-direction: column; gap: 9px; transition: box-shadow .15s, transform .15s; animation: fadeUp .25s ease; }
+    .card-wrap { position: relative; overflow: hidden; border-radius: var(--radius); }
+    .card-under { position: absolute; inset: 0; background: #B33A2B; border-radius: var(--radius); display: flex; align-items: center; justify-content: flex-end; padding-right: 22px; color: #fff; font-size: 13px; font-weight: 600; gap: 8px; }
+    .card { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 17px; display: flex; flex-direction: column; gap: 9px; animation: fadeUp .25s ease; touch-action: pan-y; will-change: transform; }
     @keyframes fadeUp { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: none; } }
-    .card:hover { box-shadow: 0 4px 18px rgba(22,18,16,.10); transform: translateY(-1px); }
+    .card.swiping { transition: none; }
+    .card.snap-back { transition: transform .2s ease; }
+    .card.flying { transition: transform .25s ease, opacity .25s ease; opacity: 0; }
+    .card-wrap.collapsing { transition: max-height .25s ease, opacity .25s ease, margin .25s ease; max-height: 0 !important; opacity: 0; }
     .card-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
     .badge { font-size: 10px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; padding: 2px 8px; border-radius: 20px; }
     .card-src { font-size: 11px; color: var(--muted); margin-left: auto; font-weight: 500; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -66,14 +66,45 @@
     .card-title a { color: inherit; text-decoration: none; }
     .card-title a:hover { color: var(--terracotta); }
     .card-excerpt { font-size: 13px; color: var(--muted); line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-    .card-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; padding-top: 4px; }
-    .card-date { font-size: 11px; color: var(--muted); }
-    .read-link { font-size: 12px; font-weight: 600; color: var(--terracotta); text-decoration: none; }
-    .read-link:hover { color: var(--terra-dk); }
-
+    .card-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; padding-top: 4px; gap: 8px; }
+    .card-date { font-size: 11px; color: var(--muted); white-space: nowrap; }
+    .card-actions { display: flex; align-items: center; gap: 12px; }
+    .act-btn { font-size: 12px; font-weight: 600; color: var(--terracotta); text-decoration: none; background: none; border: none; cursor: pointer; font-family: inherit; padding: 2px 0; }
+    .act-btn:hover { color: var(--terra-dk); }
+    .rating-row { display: flex; align-items: center; gap: 8px; padding-top: 2px; }
+    .rating-dots { display: flex; gap: 6px; }
+    .rdot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); background: var(--surface); cursor: pointer; padding: 0; transition: background .12s, border-color .12s, transform .12s; }
+    .rdot:active { transform: scale(1.25); }
+    .rdot.lit { background: var(--terracotta); border-color: var(--terracotta); }
+    .rating-label { font-size: 10px; color: var(--muted); }
+    .team-sig { font-size: 10px; color: var(--muted); margin-left: auto; }
     .empty { grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--muted); font-size: 14px; }
     .empty-icon { font-size: 32px; display: block; margin-bottom: 10px; }
-
+    /* Undo toast */
+    #toast { position: fixed; left: 50%; transform: translateX(-50%) translateY(80px); bottom: 24px; background: var(--charcoal); color: #F0EBE1; padding: 10px 16px; border-radius: 10px; font-size: 13px; display: flex; align-items: center; gap: 14px; z-index: 300; transition: transform .25s ease; box-shadow: 0 6px 24px rgba(0,0,0,.3); max-width: calc(100vw - 32px); }
+    #toast.visible { transform: translateX(-50%) translateY(0); }
+    #toast button { background: none; border: none; color: var(--terracotta); font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; flex-shrink: 0; }
+    /* Reader modal */
+    #reader { position: fixed; inset: 0; background: var(--cream); z-index: 400; display: none; flex-direction: column; }
+    #reader.open { display: flex; }
+    .reader-bar { background: var(--charcoal); color: #F0EBE1; padding: 12px 16px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .reader-bar .title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .rbtn { background: var(--charcoal-mid); color: #C8BEB4; border: 1px solid #3A3430; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; }
+    .rbtn:hover { background: #3A3430; color: #F0EBE1; }
+    #reader-body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 24px 18px 80px; }
+    .reader-inner { max-width: 680px; margin: 0 auto; }
+    .reader-inner h1 { font-size: 22px; line-height: 1.3; margin-bottom: 8px; }
+    .reader-meta { font-size: 12px; color: var(--muted); margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+    .reader-meta a { color: var(--terracotta); }
+    .reader-inner p { font-size: 15px; line-height: 1.7; margin-bottom: 14px; }
+    .reader-inner h2, .reader-inner h3 { font-size: 17px; margin: 22px 0 10px; }
+    .reader-loading { text-align: center; padding: 60px 0; color: var(--muted); font-size: 14px; }
+    @media print {
+      body > header, .tabs-wrap, main, #toast { display: none !important; }
+      #reader { position: static; display: block !important; background: #fff; }
+      .reader-bar { display: none !important; }
+      #reader-body { overflow: visible; padding: 0; }
+    }
     @media (max-width: 500px) {
       header { padding: 10px 14px; }
       .header-title { font-size: 14px; }
@@ -83,7 +114,6 @@
   </style>
 </head>
 <body>
-
 <header>
   <div class="header-left">
     <div class="logo">N</div>
@@ -93,6 +123,7 @@
     </div>
   </div>
   <div class="header-right">
+    <span id="offline-pill">offline</span>
     <span id="last-updated"></span>
     <button id="refresh-btn">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -103,9 +134,7 @@
     </button>
   </div>
 </header>
-
 <div class="tabs-wrap"><div class="tabs" id="tabs"></div></div>
-
 <main>
   <div id="progress-wrap"><div id="progress-bar"></div></div>
   <div id="status-bar" style="display:none">
@@ -115,36 +144,59 @@
   </div>
   <div id="grid"></div>
 </main>
-
+<div id="toast"><span id="toast-msg"></span><button id="toast-undo">Undo</button></div>
+<div id="reader">
+  <div class="reader-bar">
+    <button class="rbtn" id="reader-close">← Back</button>
+    <span class="title" id="reader-title"></span>
+    <button class="rbtn" id="reader-print">Print</button>
+    <button class="rbtn" id="reader-pdf">PDF</button>
+  </div>
+  <div id="reader-body"><div class="reader-inner" id="reader-inner"></div></div>
+</div>
 <script>
 /* ============================================================
-   NSL Intelligence Feed v5
+   NSL Intelligence Feed v6
    ============================================================
-   PROXY:    Cloudflare Worker (private, no rate limits)
-   SEARCH:   Bing News RSS (Google News blocks Cloudflare IPs)
-   COMPANY:  Direct scrape of nearspacelabs.com/press
-   VERTICALS: Curated trade-publication RSS feeds
-
-   Six target verticals (per nearspacelabs.com):
+   ARCHITECTURE
+   - DISCOVERY: Bing News RSS + GDELT DOC API (3-month reach) +
+     curated trade RSS + nearspacelabs.com/press — all via the
+     private Cloudflare Worker proxy.
+   - SHARED STORE: the same Worker now exposes /api/* backed by
+     D1. Every discovered article is pushed there, building a
+     team-wide 8-month backlog (auto-purged server-side).
+   - LOCAL CACHE: IndexedDB mirrors the shared store so the feed
+     opens instantly and works offline (with sw.js installed).
+   - FEEDBACK: swipe-away = "not relevant" signal; 5-dot rating
+     per article. Both sync to the shared store and feed the
+     relevance model that ranks/filters future scrapes.
+   Verticals (per nearspacelabs.com):
      P&C Insurance · State & Local Government · Energy & Utilities
      Forestry & Environment · Mapping Technology · Roofing & Home Services
-
-   Direct competitors:
-     Aerial/HAPS:  Nearmap, EagleView, Vexcel
-     Satellite:    Planet Labs, Maxar, BlackSky, Satellogic
-     Drone:        Zeitview (formerly DroneBase), DroneDeploy
    ============================================================ */
 
 // ---------- CONFIG ----------
-const PROXY_BASE = 'https://nsl-proxy.haydenmterjeson.workers.dev/?url=';
-const CACHE_KEY = 'nsl_feed_cache_v5';
-const CACHE_TTL_MS = 10 * 60 * 1000;
+const WORKER_BASE = 'https://nsl-proxy.haydenmterjeson.workers.dev';
+const PROXY_BASE  = WORKER_BASE + '/?url=';
+const API_BASE    = WORKER_BASE + '/api';
 const FETCH_TIMEOUT_MS = 12000;
 const BATCH_SIZE = 12;
-const MAX_AGE_MS = 120 * 24 * 60 * 60 * 1000; // 120 days
+const MAX_AGE_MS = 8 * 30.44 * 24 * 60 * 60 * 1000; // 8 months
+const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;          // auto-skip refresh if <10 min old
 
-// Soft relevance terms — applied only to broad vertical Bing News queries
-// (not to company/competitor name queries — the name match IS the signal).
+// ============================================================
+// >>> SEO KEYWORDS — PASTE YOUR GOOGLE ADS KEYWORDS HERE <<<
+// One phrase per line, in quotes, comma-separated. These are
+// used two ways: (1) extra Bing/GDELT discovery queries for the
+// NSL + Competitors tabs, (2) relevance scoring for all verticals.
+// ============================================================
+const SEO_KEYWORDS = [
+  // 'example: high resolution aerial imagery',
+  // 'example: orthoimagery provider',
+];
+
+// Soft relevance terms — applied to broad vertical queries
+// (not to company/competitor name queries — the name IS the signal).
 const RELEVANCE_TERMS = [
   'aerial', 'satellite', 'geospatial', 'imagery', 'remote sensing',
   'earth observation', 'drone', 'uav', 'lidar', 'gis', 'mapping',
@@ -152,143 +204,124 @@ const RELEVANCE_TERMS = [
   'photogrammetry', 'geoint', 'overhead', 'airborne', 'roof inspection',
   'vegetation management', 'aerial inspection', 'aerial survey',
   'aerial photography', 'aerial data', 'aerial mapping', 'satellite imagery',
-  'wildfire', 'deforestation', 'forest monitoring', 'crop monitoring',
+  'wildfire', 'deforestation', 'forest monitoring', 'forest health',
+  'timber', 'canopy', 'carbon offset', 'crop monitoring',
   'precision agriculture', 'land use', 'land cover', 'spatial data',
   'cartography', 'point cloud', 'high resolution imagery',
   'near space labs', 'nearmap', 'eagleview', 'vexcel', 'maxar',
   'planet labs', 'blacksky', 'satellogic', 'zeitview', 'dronedeploy',
-  'underwriting', 'catastrophe', 'climate risk', 'infrastructure monitoring'
+  'underwriting', 'catastrophe', 'climate risk', 'infrastructure monitoring',
+  ...SEO_KEYWORDS.map(k => k.toLowerCase()),
 ];
 
 const FEEDS = [
   // ============================================================
-  // NEAR SPACE LABS — direct from their press page + name searches
+  // NEAR SPACE LABS — press page + Bing + GDELT (3-month reach)
   // ============================================================
   {
-    id: 'nsl',
-    label: 'Near Space Labs',
-    color: '#CC6847', bg: '#FDF2EC',
+    id: 'nsl', label: 'Near Space Labs', color: '#CC6847', bg: '#FDF2EC',
     sources: [
-      // Authoritative: scrape NSL's own press page (HTML, parsed below)
       { type: 'nsl_press', url: 'https://www.nearspacelabs.com/press', tag: 'company' },
-      // Bing News searches for company mentions
-      { type: 'bing', query: '"Near Space Labs"', tag: 'company' },
-      { type: 'bing', query: '"Near Space Labs" stratospheric', tag: 'company' },
-      { type: 'bing', query: '"Near Space Labs" Swift balloon', tag: 'company' },
-      { type: 'bing', query: '"Rema Matevosyan"', tag: 'company' },
+      { type: 'bing',  query: '"Near Space Labs"', tag: 'company' },
+      { type: 'bing',  query: '"Rema Matevosyan"', tag: 'company' },
+      { type: 'gdelt', query: '"near space labs"', tag: 'company' },
+      { type: 'gdelt', query: '"rema matevosyan"', tag: 'company' },
     ]
   },
-
   // ============================================================
-  // COMPETITORS — one query per named competitor
+  // COMPETITORS — Bing per name + GDELT batched (3-month reach)
   // ============================================================
   {
-    id: 'competitors',
-    label: 'Competitors',
-    color: '#5C4E44', bg: '#F5F0E8',
+    id: 'competitors', label: 'Competitors', color: '#5C4E44', bg: '#F5F0E8',
     sources: [
-      // Aerial / HAPS competitors
       { type: 'bing', query: '"Nearmap"', tag: 'competitor' },
       { type: 'bing', query: '"EagleView"', tag: 'competitor' },
       { type: 'bing', query: '"Vexcel Imaging"', tag: 'competitor' },
-      // Satellite operators
       { type: 'bing', query: '"Planet Labs"', tag: 'competitor' },
       { type: 'bing', query: '"Maxar" imagery', tag: 'competitor' },
       { type: 'bing', query: '"BlackSky"', tag: 'competitor' },
       { type: 'bing', query: '"Satellogic"', tag: 'competitor' },
-      // Drone imagery
       { type: 'bing', query: '"Zeitview"', tag: 'competitor' },
       { type: 'bing', query: '"DroneDeploy"', tag: 'competitor' },
+      { type: 'gdelt', query: '("Nearmap" OR "EagleView" OR "Vexcel Imaging" OR "Zeitview" OR "DroneDeploy")', tag: 'competitor' },
+      { type: 'gdelt', query: '("Planet Labs" OR "BlackSky" OR "Satellogic")', tag: 'competitor' },
     ]
   },
-
   // ============================================================
   // INDUSTRY (hidden) — feeds into All only
   // ============================================================
   {
-    id: 'industry',
-    label: 'Industry', hidden: true,
-    color: '#3B6E8A', bg: '#EFF6FB',
+    id: 'industry', label: 'Industry', hidden: true, color: '#3B6E8A', bg: '#EFF6FB',
     sources: [
-      { type: 'rss', url: 'https://geospatialworld.net/feed/', tag: 'curated' },
-      { type: 'rss', url: 'https://www.gim-international.com/rss.xml', tag: 'curated' },
+      { type: 'rss',  url: 'https://geospatialworld.net/feed/', tag: 'curated' },
+      { type: 'rss',  url: 'https://www.gim-international.com/rss.xml', tag: 'curated' },
       { type: 'bing', query: '"earth observation" commercial imagery', tag: 'vertical' },
       { type: 'bing', query: 'geospatial intelligence remote sensing', tag: 'vertical' },
     ]
   },
-
   // ============================================================
   // P&C INSURANCE
   // ============================================================
   {
-    id: 'insurance',
-    label: 'P&C Insurance',
-    color: '#2E6B50', bg: '#EDFAF4',
+    id: 'insurance', label: 'P&C Insurance', color: '#2E6B50', bg: '#EDFAF4',
     sources: [
-      { type: 'rss', url: 'https://insuranceinnovationreporter.com/feed/', tag: 'curated' },
+      { type: 'rss',  url: 'https://insuranceinnovationreporter.com/feed/', tag: 'curated' },
       { type: 'bing', query: 'property insurance aerial imagery underwriting', tag: 'vertical' },
       { type: 'bing', query: 'homeowners insurance satellite imagery', tag: 'vertical' },
       { type: 'bing', query: 'catastrophe modeling property risk imagery', tag: 'vertical' },
       { type: 'bing', query: 'insurance roof inspection aerial', tag: 'vertical' },
     ]
   },
-
   // ============================================================
   // STATE & LOCAL GOVERNMENT
   // ============================================================
   {
-    id: 'government',
-    label: 'State & Local Gov',
-    color: '#7A2020', bg: '#FDF0F0',
+    id: 'government', label: 'State & Local Gov', color: '#7A2020', bg: '#FDF0F0',
     sources: [
-      { type: 'rss', url: 'https://www.govtech.com/rss.xml', tag: 'curated' },
-      { type: 'rss', url: 'https://statetechmagazine.com/rss.xml', tag: 'curated' },
+      { type: 'rss',  url: 'https://www.govtech.com/rss.xml', tag: 'curated', filter: true },
+      { type: 'rss',  url: 'https://statetechmagazine.com/rss.xml', tag: 'curated', filter: true },
       { type: 'bing', query: 'municipal GIS aerial imagery program', tag: 'vertical' },
       { type: 'bing', query: 'state government geospatial mapping', tag: 'vertical' },
       { type: 'bing', query: 'emergency management aerial imagery disaster', tag: 'vertical' },
     ]
   },
-
   // ============================================================
   // ENERGY & UTILITIES
   // ============================================================
   {
-    id: 'energy',
-    label: 'Energy & Utilities',
-    color: '#8A4A1A', bg: '#FBF4EC',
+    id: 'energy', label: 'Energy & Utilities', color: '#8A4A1A', bg: '#FBF4EC',
     sources: [
-      { type: 'rss', url: 'https://www.utilitydive.com/feeds/news/', tag: 'curated' },
-      { type: 'rss', url: 'https://www.tdworld.com/rss/all', tag: 'curated' },
+      { type: 'rss',  url: 'https://www.utilitydive.com/feeds/news/', tag: 'curated', filter: true },
+      { type: 'rss',  url: 'https://www.tdworld.com/rss/all', tag: 'curated', filter: true },
       { type: 'bing', query: 'utility vegetation management aerial', tag: 'vertical' },
       { type: 'bing', query: 'power line inspection aerial imagery', tag: 'vertical' },
       { type: 'bing', query: 'grid infrastructure monitoring satellite', tag: 'vertical' },
     ]
   },
-
   // ============================================================
-  // FORESTRY & ENVIRONMENT
+  // FORESTRY & ENVIRONMENT — refocused on remote sensing FOR
+  // forestry (per nearspacelabs.com/industries/forestry-environment:
+  // forest health, biodiversity mapping, carbon offset verification,
+  // wildfire exposure) rather than general environmental news.
+  // Curated feeds now pass through the relevance filter too.
   // ============================================================
   {
-    id: 'forestry',
-    label: 'Forestry & Environment',
-    color: '#2A6630', bg: '#EEF8EF',
+    id: 'forestry', label: 'Forestry & Environment', color: '#2A6630', bg: '#EEF8EF',
     sources: [
-      { type: 'rss', url: 'https://news.mongabay.com/feed/', tag: 'curated' },
-      { type: 'rss', url: 'https://www.carbonbrief.org/feed/', tag: 'curated' },
-      { type: 'bing', query: 'wildfire mapping aerial imagery', tag: 'vertical' },
-      { type: 'bing', query: 'forest monitoring satellite remote sensing', tag: 'vertical' },
-      { type: 'bing', query: 'carbon offset verification imagery', tag: 'vertical' },
-      { type: 'bing', query: 'deforestation monitoring aerial', tag: 'vertical' },
+      { type: 'rss',  url: 'https://news.mongabay.com/feed/', tag: 'curated', filter: true },
+      { type: 'bing', query: 'forest health monitoring aerial imagery', tag: 'vertical' },
+      { type: 'bing', query: 'forestry remote sensing management', tag: 'vertical' },
+      { type: 'bing', query: 'wildfire risk mapping aerial imagery', tag: 'vertical' },
+      { type: 'bing', query: 'carbon offset verification satellite imagery', tag: 'vertical' },
+      { type: 'bing', query: 'timber inventory remote sensing', tag: 'vertical' },
+      { type: 'bing', query: 'biodiversity mapping aerial imagery', tag: 'vertical' },
     ]
   },
-
   // ============================================================
   // MAPPING TECHNOLOGY
   // ============================================================
   {
-    id: 'mapping',
-    label: 'Mapping Tech',
-    color: '#4B3F8A', bg: '#F1EEFA',
+    id: 'mapping', label: 'Mapping Tech', color: '#4B3F8A', bg: '#F1EEFA',
     sources: [
       { type: 'bing', query: 'basemap aerial imagery update', tag: 'vertical' },
       { type: 'bing', query: 'digital twin geospatial mapping', tag: 'vertical' },
@@ -296,14 +329,11 @@ const FEEDS = [
       { type: 'bing', query: '"high resolution" mapping orthoimagery', tag: 'vertical' },
     ]
   },
-
   // ============================================================
   // ROOFING & HOME SERVICES
   // ============================================================
   {
-    id: 'roofing',
-    label: 'Roofing & Home Services',
-    color: '#A04E1C', bg: '#FBF0E8',
+    id: 'roofing', label: 'Roofing & Home Services', color: '#A04E1C', bg: '#FBF0E8',
     sources: [
       { type: 'bing', query: 'roofing contractor aerial imagery', tag: 'vertical' },
       { type: 'bing', query: 'roof measurement satellite EagleView', tag: 'vertical' },
@@ -312,11 +342,72 @@ const FEEDS = [
     ]
   },
 ];
+// Extra discovery from SEO keywords → searched as NSL-market queries.
+const KEYWORD_SOURCES = SEO_KEYWORDS.slice(0, 12).map(k => ({
+  feedId: 'industry', src: { type: 'bing', query: k, tag: 'vertical' }
+}));
+
+const FEED_BY_ID = Object.fromEntries(FEEDS.map(f => [f.id, f]));
+
+// ---------- DEVICE ID ----------
+const DEVICE_ID = (() => {
+  try {
+    let id = localStorage.getItem('nsl_device_id');
+    if (!id) { id = 'd-' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('nsl_device_id', id); }
+    return id;
+  } catch { return 'd-anon'; }
+})();
 
 // ---------- STATE ----------
-let allArticles = [];
+let allArticles = [];                  // merged shared + freshly discovered
+let feedbackAgg = {};                  // id -> {avg_rating, rating_count, dismiss_count}
+let myFeedback = {};                   // id -> {rating, dismissed}
 let activeTab = 'all';
 let isLoading = false;
+let apiAvailable = true;
+let lastDismissed = null;
+let toastTimer = null;
+
+// ---------- SMALL UTILS ----------
+function fnv1a(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return ('0000000' + (h >>> 0).toString(16)).slice(-8);
+}
+function titleKey(t) { return (t || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 80); }
+function articleId(a) { return 'a' + fnv1a(titleKey(a.title)); }
+function escHtml(s) { return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function stripHtml(html) { const d = document.createElement('div'); d.innerHTML = html || ''; return (d.textContent || '').trim(); }
+function cleanTitle(t) { return (t || '').replace(/\s[-–]\s[^-–]{1,50}$/, '').trim(); }
+function relTime(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts, m = Math.floor(diff / 60000);
+  if (m < 90) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const dy = Math.floor(h / 24);
+  if (dy < 8) return `${dy}d ago`;
+  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: dy > 300 ? 'numeric' : undefined });
+}
+function parseTs(str) { const t = new Date(str).getTime(); return isNaN(t) ? 0 : t; }
+function tsFor(a) { return a.publishedAt || a.firstSeen || 0; }
+function isFresh(a) { const t = tsFor(a); return !t || (Date.now() - t) <= MAX_AGE_MS; }
+function isRelevant(a) {
+  const blob = `${a.title} ${a.excerpt}`.toLowerCase();
+  return RELEVANCE_TERMS.some(term => term && blob.includes(term));
+}
+function dedupMerge(into, items) {
+  const byId = new Map(into.map(a => [a.id, a]));
+  for (const a of items) {
+    const ex = byId.get(a.id);
+    if (!ex) { byId.set(a.id, a); }
+    else {
+      if (!ex.publishedAt && a.publishedAt) ex.publishedAt = a.publishedAt;
+      if ((a.excerpt || '').length > (ex.excerpt || '').length) ex.excerpt = a.excerpt;
+    }
+  }
+  return [...byId.values()].sort((x, y) => tsFor(y) - tsFor(x));
+}
 
 // ---------- FETCH (through Cloudflare Worker) ----------
 async function fetchUrl(url) {
@@ -327,295 +418,352 @@ async function fetchUrl(url) {
     clearTimeout(t);
     if (!res.ok) throw new Error(res.status);
     return await res.text();
-  } catch {
-    clearTimeout(t);
-    return '';
-  }
+  } catch { clearTimeout(t); return ''; }
 }
 
-// ---------- URL BUILDERS ----------
-function bingNewsUrl(query) {
-  return `https://www.bing.com/news/search?q=${encodeURIComponent(query)}&format=rss`;
+// ---------- DISCOVERY PARSERS ----------
+function bingNewsUrl(q) { return `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss`; }
+function gdeltUrl(q) {
+  return `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q + ' sourcelang:english')}&mode=artlist&format=json&timespan=12w&maxrecords=75&sort=datedesc`;
 }
 
-// ---------- PARSING & HELPERS ----------
-function stripHtml(html) {
-  const d = document.createElement('div');
-  d.innerHTML = html || '';
-  return (d.textContent || '').trim();
-}
-
-function cleanTitle(t) {
-  return (t || '').replace(/\s[-–]\s[^-–]{1,50}$/, '').trim();
-}
-
-function relTime(str) {
-  const d = new Date(str);
-  if (isNaN(d)) return '';
-  const diff = Date.now() - d, m = Math.floor(diff / 60000);
-  if (m < 90)  return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24)  return `${h}h ago`;
-  const dy = Math.floor(h / 24);
-  if (dy < 8)  return `${dy}d ago`;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: dy > 300 ? 'numeric' : undefined });
-}
-
-function tsFor(a) {
-  const t = new Date(a.date).getTime();
-  return isNaN(t) ? 0 : t;
-}
-
-function dedup(arr) {
-  const seen = new Set();
-  return arr.filter(a => {
-    const k = (a.title || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
-    if (!k || seen.has(k)) return false;
-    seen.add(k); return true;
-  });
-}
-
-function shouldFilter(source) {
-  return source.tag === 'vertical';
-}
-
-function isRelevant(article) {
-  const blob = `${article.title} ${article.excerpt}`.toLowerCase();
-  return RELEVANCE_TERMS.some(term => blob.includes(term));
-}
-
-function isFresh(article) {
-  const t = new Date(article.date).getTime();
-  if (isNaN(t)) return true;
-  return (Date.now() - t) <= MAX_AGE_MS;
-}
-
-// ---------- RSS / Bing News XML PARSER ----------
 function parseXml(xmlStr, feed, feedUrl) {
   try {
     const doc = new DOMParser().parseFromString(xmlStr, 'application/xml');
     if (doc.querySelector('parsererror')) return [];
-    const items = Array.from(doc.querySelectorAll('item'));
-    if (!items.length) return [];
-
-    return items.slice(0, 40).map(el => {
+    return Array.from(doc.querySelectorAll('item')).slice(0, 40).map(el => {
       const title = cleanTitle(el.querySelector('title')?.textContent?.trim() || '');
       if (!title || title.length < 6) return null;
-      if (title === 'BLOCKED_BY_GOOGLE') return null; // safety check
-
       let link = el.querySelector('link')?.textContent?.trim() || '';
-      if (!link || !link.startsWith('http')) {
-        link = el.querySelector('guid')?.textContent?.trim() || '#';
-      }
-
+      if (!link || !link.startsWith('http')) link = el.querySelector('guid')?.textContent?.trim() || '#';
       let source = el.querySelector('source')?.textContent?.trim() || '';
-      if (!source) {
-        try { source = new URL(feedUrl).hostname.replace('www.', ''); } catch { source = feed.label; }
-      }
-
-      const date    = el.querySelector('pubDate')?.textContent?.trim() || '';
-      const desc    = el.querySelector('description')?.textContent?.trim() || '';
-      const excerpt = stripHtml(desc).slice(0, 220);
-      return { feedId: feed.id, feed, title, link, source, date, excerpt };
+      if (!source) { try { source = new URL(feedUrl).hostname.replace('www.', ''); } catch { source = feed.label; } }
+      const publishedAt = parseTs(el.querySelector('pubDate')?.textContent?.trim() || '');
+      const excerpt = stripHtml(el.querySelector('description')?.textContent?.trim() || '').slice(0, 300);
+      const a = { feedId: feed.id, title, link, source, publishedAt, excerpt };
+      a.id = articleId(a);
+      return a;
     }).filter(Boolean);
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-// ---------- NSL PRESS PAGE PARSER ----------
-// Scrapes nearspacelabs.com/press for the authoritative list of NSL coverage.
-// The page is built with Webflow; press items are anchors with dates.
-function parseNslPress(html, feed, feedUrl) {
+function parseGdelt(jsonStr, feed) {
+  try {
+    const data = JSON.parse(jsonStr);
+    if (!data || !Array.isArray(data.articles)) return [];
+    return data.articles.slice(0, 75).map(it => {
+      const title = cleanTitle(it.title || '');
+      if (!title || title.length < 6) return null;
+      // seendate format: 20260310T202459Z
+      let publishedAt = 0;
+      const m = (it.seendate || '').match(/^(\d{4})(\d{2})(\d{2})T?(\d{2})?(\d{2})?/);
+      if (m) publishedAt = Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 12), +(m[5] || 0));
+      const a = {
+        feedId: feed.id, title,
+        link: it.url || '#',
+        source: (it.domain || '').replace('www.', '') || 'GDELT',
+        publishedAt,
+        excerpt: '',
+      };
+      a.id = articleId(a);
+      return a;
+    }).filter(Boolean);
+  } catch { return []; }
+}
+
+function parseNslPress(html, feed) {
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    // Press items have a date string followed by publication name and title.
-    // We look for anchors with external href that point to actual articles.
     const anchors = Array.from(doc.querySelectorAll('a[href^="http"]'));
-    const externalArticles = anchors.filter(a => {
+    const seen = new Set(); const results = [];
+    for (const a of anchors) {
       const href = a.getAttribute('href') || '';
-      const text = (a.textContent || '').trim();
-      // Skip internal links and nav
-      if (href.includes('nearspacelabs.com')) return false;
-      if (href.includes('linkedin.com') || href.includes('twitter.com')) return false;
-      // Must have meaningful text
-      if (text.length < 15) return false;
-      return true;
-    });
-
-    const seen = new Set();
-    const results = [];
-    for (const a of externalArticles) {
-      const href = a.getAttribute('href');
-      if (seen.has(href)) continue;
-      seen.add(href);
-
       const fullText = (a.textContent || '').trim();
-      // Try to split into publication + title (e.g. "TechCrunchNear Space Labs nabs $20M...")
-      // Look for a date string nearby
-      let publication = '';
-      let title = fullText;
-
-      // Look for date in parent or sibling text — Webflow renders dates as preceding text
-      const parent = a.parentElement;
-      const parentText = parent ? (parent.textContent || '') : '';
-      const dateMatch = parentText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/);
-      const dateStr = dateMatch ? dateMatch[0] : '';
-
-      // Try to extract publication name (precedes title in concatenated text)
-      const pubMatch = fullText.match(/^([A-Z][A-Za-z'\s&.]+?)([A-Z][^A-Z].+)$/);
-      if (pubMatch && pubMatch[1].length < 40) {
-        publication = pubMatch[1].trim();
-        title = pubMatch[2].trim();
-      }
-
-      // Filter out social-link anchors and "See More" buttons
-      if (title.length < 10 || title === 'See More' || title === 'Next') continue;
-      // Trim trailing tags like "Article" or "Podcast"
+      if (href.includes('nearspacelabs.com') || href.includes('linkedin.com') || href.includes('twitter.com')) continue;
+      if (fullText.length < 15 || seen.has(href)) continue;
+      seen.add(href);
+      let publication = '', title = fullText;
+      const parentText = a.parentElement ? (a.parentElement.textContent || '') : '';
+      const dm = parentText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/);
+      const pm = fullText.match(/^([A-Z][A-Za-z'\s&.]+?)([A-Z][^A-Z].+)$/);
+      if (pm && pm[1].length < 40) { publication = pm[1].trim(); title = pm[2].trim(); }
       title = title.replace(/(Article|Podcast|Press Release|Video)$/, '').trim();
-
-      results.push({
-        feedId: feed.id,
-        feed,
-        title,
-        link: href,
+      if (title.length < 10 || title === 'See More' || title === 'Next') continue;
+      const art = {
+        feedId: feed.id, title, link: href,
         source: publication || 'nearspacelabs.com/press',
-        date: dateStr ? new Date(dateStr).toUTCString() : '',
+        publishedAt: dm ? parseTs(dm[0]) : 0,
         excerpt: 'Featured in Near Space Labs press coverage.',
-      });
+      };
+      art.id = articleId(art);
+      results.push(art);
     }
-
     return results.slice(0, 25);
-  } catch (e) {
-    console.warn('NSL press parse error:', e);
-    return [];
-  }
+  } catch { return []; }
 }
 
-// ---------- ROUTER ----------
 async function fetchSource(source, feed) {
   let url;
-  if (source.type === 'bing')      url = bingNewsUrl(source.query);
-  else if (source.type === 'rss')  url = source.url;
-  else if (source.type === 'nsl_press') url = source.url;
+  if (source.type === 'bing') url = bingNewsUrl(source.query);
+  else if (source.type === 'gdelt') url = gdeltUrl(source.query);
+  else if (source.type === 'rss' || source.type === 'nsl_press') url = source.url;
   else return [];
-
   const body = await fetchUrl(url);
   if (!body) return [];
-
   let parsed;
-  if (source.type === 'nsl_press') {
-    parsed = parseNslPress(body, feed, url);
-  } else {
-    parsed = parseXml(body, feed, url);
-  }
-
+  if (source.type === 'nsl_press') parsed = parseNslPress(body, feed);
+  else if (source.type === 'gdelt') parsed = parseGdelt(body, feed);
+  else parsed = parseXml(body, feed, url);
   parsed = parsed.filter(isFresh);
-  if (shouldFilter(source)) parsed = parsed.filter(isRelevant);
+  if (source.tag === 'vertical' || source.filter) parsed = parsed.filter(isRelevant);
   return parsed;
 }
 
-// ---------- CACHE ----------
-function readCache() {
-  try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const obj = JSON.parse(raw);
-    if (!obj || !obj.savedAt || Date.now() - obj.savedAt > CACHE_TTL_MS) return null;
-    const feedById = Object.fromEntries(FEEDS.map(f => [f.id, f]));
-    obj.articles = (obj.articles || []).map(a => ({ ...a, feed: feedById[a.feedId] })).filter(a => a.feed);
-    return obj;
-  } catch {
-    return null;
-  }
-}
+// ---------- INDEXEDDB (offline mirror) ----------
+const idb = {
+  db: null,
+  async open() {
+    if (this.db) return this.db;
+    this.db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('nsl_feed', 1);
+      req.onupgradeneeded = () => {
+        const d = req.result;
+        if (!d.objectStoreNames.contains('articles')) d.createObjectStore('articles', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'k' });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return this.db;
+  },
+  async putArticles(arts) {
+    try {
+      const d = await this.open();
+      const tx = d.transaction('articles', 'readwrite');
+      const st = tx.objectStore('articles');
+      arts.forEach(a => st.put(a));
+      // purge > 8 months locally
+      const cutoff = Date.now() - MAX_AGE_MS;
+      st.openCursor().onsuccess = (e) => {
+        const c = e.target.result;
+        if (c) { if ((tsFor(c.value) || Infinity) < cutoff) c.delete(); c.continue(); }
+      };
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    } catch {}
+  },
+  async getArticles() {
+    try {
+      const d = await this.open();
+      return await new Promise(resolve => {
+        const req = d.transaction('articles').objectStore('articles').getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => resolve([]);
+      });
+    } catch { return []; }
+  },
+  async putMeta(k, v) {
+    try {
+      const d = await this.open();
+      const tx = d.transaction('meta', 'readwrite');
+      tx.objectStore('meta').put({ k, v });
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    } catch {}
+  },
+  async getMeta(k) {
+    try {
+      const d = await this.open();
+      return await new Promise(resolve => {
+        const req = d.transaction('meta').objectStore('meta').get(k);
+        req.onsuccess = () => resolve(req.result ? req.result.v : null);
+        req.onerror = () => resolve(null);
+      });
+    } catch { return null; }
+  },
+};
 
-function writeCache(articles) {
+// ---------- SHARED STORE (Worker API) ----------
+async function apiGetState() {
   try {
-    const slim = articles.map(({ feed, ...rest }) => rest);
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), articles: slim }));
+    const res = await fetch(`${API_BASE}/state?device=${encodeURIComponent(DEVICE_ID)}`, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    apiAvailable = true;
+    return data;
+  } catch { apiAvailable = false; return null; }
+}
+async function apiPushArticles(arts) {
+  if (!apiAvailable || !arts.length) return;
+  try {
+    // strip to wire format
+    const wire = arts.map(a => ({ id: a.id, feedId: a.feedId, title: a.title, link: a.link, source: a.source, excerpt: a.excerpt, publishedAt: a.publishedAt || null }));
+    for (let i = 0; i < wire.length; i += 400) {
+      await fetch(`${API_BASE}/articles`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ articles: wire.slice(i, i + 400) }),
+      });
+    }
+  } catch {}
+}
+async function apiPushFeedback(payload) {
+  try {
+    await fetch(`${API_BASE}/feedback`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: DEVICE_ID, ...payload }),
+    });
   } catch {}
 }
 
-// ---------- LOAD ----------
+// ---------- RELEVANCE LEARNING ----------
+// Team feedback adjusts term + source weights. High ratings boost
+// the terms/sources of that article; low ratings and dismissals
+// demote them. Vertical-tag articles scoring below the cut are
+// pushed to the bottom (they stay accessible, never silently lost).
+function buildWeights() {
+  const termW = {}, srcW = {};
+  for (const a of allArticles) {
+    const agg = feedbackAgg[a.id]; const mine = myFeedback[a.id];
+    let signal = 0;
+    if (agg && agg.rating_count > 0) signal += (agg.avg_rating - 3) * agg.rating_count;
+    if (agg && agg.dismiss_count > 0) signal -= 2 * agg.dismiss_count;
+    if (mine && mine.rating) signal += (mine.rating - 3);            // extra weight for own taste
+    if (!signal) continue;
+    const blob = `${a.title} ${a.excerpt}`.toLowerCase();
+    for (const t of RELEVANCE_TERMS) { if (t && blob.includes(t)) termW[t] = (termW[t] || 0) + signal; }
+    if (a.source) srcW[a.source.toLowerCase()] = (srcW[a.source.toLowerCase()] || 0) + signal;
+  }
+  return { termW, srcW };
+}
+function scoreArticle(a, weights) {
+  let s = 0;
+  const blob = `${a.title} ${a.excerpt}`.toLowerCase();
+  for (const t of RELEVANCE_TERMS) { if (t && blob.includes(t)) s += 1 + (weights.termW[t] || 0) * 0.25; }
+  s += (weights.srcW[(a.source || '').toLowerCase()] || 0) * 0.5;
+  const agg = feedbackAgg[a.id];
+  if (agg) {
+    if (agg.rating_count > 0) s += (agg.avg_rating - 3) * 2;
+    s -= (agg.dismiss_count || 0) * 3;
+  }
+  return s;
+}
+
+// ---------- LOAD PIPELINE ----------
 async function loadAll(opts = {}) {
   if (isLoading) return;
-  const { useCache = false } = opts;
+  const { force = false } = opts;
   isLoading = true;
-
   const btn = document.getElementById('refresh-btn');
   const progressWrap = document.getElementById('progress-wrap');
   const progressBar = document.getElementById('progress-bar');
   const statusBar = document.getElementById('status-bar');
   const statusMsg = document.getElementById('status-msg');
   const cacheBadge = document.getElementById('cache-badge');
+  const offlinePill = document.getElementById('offline-pill');
 
-  if (useCache) {
-    const cached = readCache();
-    if (cached && cached.articles.length) {
-      allArticles = cached.articles;
-      cacheBadge.classList.add('visible');
-      statusBar.style.display = 'flex';
-      statusMsg.textContent = `${allArticles.length} articles · cached`;
-      document.querySelector('.dot-loader').style.display = 'none';
-      document.getElementById('last-updated').textContent =
-        'Updated ' + new Date(cached.savedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-      renderTabs();
-      renderGrid();
-      isLoading = false;
-      return;
-    }
+  // 1) INSTANT: render from local IndexedDB mirror
+  statusBar.style.display = 'flex';
+  statusMsg.textContent = 'Opening backlog…';
+  const local = await idb.getArticles();
+  if (local.length) {
+    allArticles = dedupMerge([], local.filter(isFresh));
+    try { myFeedback = JSON.parse(localStorage.getItem('nsl_my_feedback') || '{}'); } catch {}
+    feedbackAgg = (await idb.getMeta('agg')) || {};
+    renderTabs(); renderGrid();
+    cacheBadge.classList.add('visible');
+    statusMsg.textContent = `${allArticles.length} articles · local backlog`;
   }
 
-  cacheBadge.classList.remove('visible');
-  document.querySelector('.dot-loader').style.display = 'flex';
-  btn.classList.add('spinning');
-  progressWrap.classList.add('visible');
-  progressBar.style.width = '4%';
-  statusBar.style.display = 'flex';
-  statusMsg.textContent = 'Fetching…';
-  document.getElementById('grid').innerHTML = '';
-  allArticles = [];
+  // 2) SHARED STORE: pull the team backlog + feedback
+  const state = await apiGetState();
+  offlinePill.classList.toggle('visible', !navigator.onLine);
+  if (state) {
+    const shared = (state.articles || []).map(r => ({
+      id: r.id, feedId: r.feed_id, title: r.title, link: r.link,
+      source: r.source, excerpt: r.excerpt, publishedAt: r.published_at || 0, firstSeen: r.first_seen,
+    })).filter(a => FEED_BY_ID[a.feedId]);
+    feedbackAgg = {};
+    (state.aggregates || []).forEach(g => { feedbackAgg[g.article_id] = g; });
+    (state.mine || []).forEach(m => {
+      myFeedback[m.article_id] = { rating: m.rating, dismissed: !!m.dismissed, ...(myFeedback[m.article_id] || {}) };
+    });
+    allArticles = dedupMerge(allArticles, shared);
+    renderTabs(); renderGrid();
+    statusMsg.textContent = `${allArticles.length} articles · shared backlog`;
+    idb.putArticles(allArticles); idb.putMeta('agg', feedbackAgg);
+  }
 
-  const allSources = FEEDS.flatMap(feed => feed.sources.map(src => ({ src, feed })));
-  const total = allSources.length;
-  let done = 0;
+  // 3) DISCOVERY: scrape fresh sources (skip if recently refreshed, unless forced)
+  const lastScrape = +(localStorage.getItem('nsl_last_scrape') || 0);
+  const shouldScrape = navigator.onLine && (force || Date.now() - lastScrape > REFRESH_COOLDOWN_MS);
+  if (shouldScrape) {
+    cacheBadge.classList.remove('visible');
+    btn.classList.add('spinning');
+    progressWrap.classList.add('visible');
+    progressBar.style.width = '4%';
 
-  for (let i = 0; i < allSources.length; i += BATCH_SIZE) {
-    const batch = allSources.slice(i, i + BATCH_SIZE);
-    await Promise.allSettled(
-      batch.map(({ src, feed }) =>
+    const allSources = [
+      ...FEEDS.flatMap(feed => feed.sources.map(src => ({ src, feed }))),
+      ...KEYWORD_SOURCES.map(({ feedId, src }) => ({ src, feed: FEED_BY_ID[feedId] })),
+    ];
+    const total = allSources.length;
+    let done = 0;
+    const discovered = [];
+    for (let i = 0; i < allSources.length; i += BATCH_SIZE) {
+      const batch = allSources.slice(i, i + BATCH_SIZE);
+      await Promise.allSettled(batch.map(({ src, feed }) =>
         fetchSource(src, feed).then(items => {
-          allArticles.push(...items);
+          discovered.push(...items);
+          allArticles = dedupMerge(allArticles, items);
           done++;
           progressBar.style.width = `${Math.round((done / total) * 100)}%`;
-          allArticles = dedup([...allArticles].sort((a, b) => tsFor(b) - tsFor(a)));
           statusMsg.textContent = `${done}/${total} sources · ${allArticles.length} articles`;
-          renderTabs();
-          renderGrid();
+          renderTabs(); renderGrid();
         })
-      )
-    );
+      ));
+    }
+    localStorage.setItem('nsl_last_scrape', String(Date.now()));
+    idb.putArticles(allArticles);
+    apiPushArticles(discovered);          // grow the shared backlog
+    progressWrap.classList.remove('visible');
+    btn.classList.remove('spinning');
   }
 
-  writeCache(allArticles);
-
-  progressWrap.classList.remove('visible');
   statusBar.style.display = 'none';
   document.getElementById('last-updated').textContent =
     'Updated ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  btn.classList.remove('spinning');
   isLoading = false;
 }
 
 // ---------- RENDER ----------
+function visibleList() {
+  const weights = buildWeights();
+  let list = allArticles.filter(a => !(myFeedback[a.id] && myFeedback[a.id].dismissed));
+  if (activeTab !== 'all') list = list.filter(a => a.feedId === activeTab);
+  // demote (not delete) team-flagged noise: 2+ dismissals or low score on broad queries
+  const demoted = [], main = [];
+  for (const a of list) {
+    const agg = feedbackAgg[a.id];
+    const noisy = (agg && agg.dismiss_count >= 2) || (agg && agg.rating_count >= 2 && agg.avg_rating < 2);
+    (noisy ? demoted : main).push(a);
+  }
+  main.sort((x, y) => {
+    const dx = tsFor(x), dy = tsFor(y);
+    // primary: date desc; learned score breaks near ties (same day)
+    if (Math.abs(dx - dy) > 36e5 * 20) return dy - dx;
+    return scoreArticle(y, weights) - scoreArticle(x, weights);
+  });
+  return [...main, ...demoted];
+}
+
 function renderTabs() {
+  const counts = {};
+  for (const a of allArticles) {
+    if (myFeedback[a.id] && myFeedback[a.id].dismissed) continue;
+    counts[a.feedId] = (counts[a.feedId] || 0) + 1;
+    counts.all = (counts.all || 0) + 1;
+  }
   const defs = [
-    { id: 'all', label: 'All', color: '#1A1511', count: allArticles.length },
-    ...FEEDS.filter(f => !f.hidden).map(f => ({
-      id: f.id, label: f.label, color: f.color,
-      count: allArticles.filter(a => a.feedId === f.id).length
-    }))
+    { id: 'all', label: 'All', color: '#1A1511', count: counts.all || 0 },
+    ...FEEDS.filter(f => !f.hidden).map(f => ({ id: f.id, label: f.label, color: f.color, count: counts[f.id] || 0 })),
   ];
   document.getElementById('tabs').innerHTML = defs.map(t => `
     <div class="tab ${t.id === activeTab ? 'active' : ''}" data-tab="${t.id}">
@@ -625,54 +773,257 @@ function renderTabs() {
     </div>`).join('');
 }
 
+function ratingDotsHtml(a) {
+  const mine = myFeedback[a.id];
+  const r = mine && mine.rating ? mine.rating : 0;
+  let dots = '';
+  for (let i = 1; i <= 5; i++) dots += `<button class="rdot ${i <= r ? 'lit' : ''}" data-rate="${i}" aria-label="Rate ${i} of 5"></button>`;
+  const agg = feedbackAgg[a.id];
+  const team = agg && agg.rating_count > 0 ? `team ${Number(agg.avg_rating).toFixed(1)}★ (${agg.rating_count})` : '';
+  return `<div class="rating-row" data-id="${a.id}">
+    <div class="rating-dots">${dots}</div>
+    <span class="rating-label">${r ? 'relevance: ' + r + '/5' : 'rate relevance'}</span>
+    <span class="team-sig">${team}</span>
+  </div>`;
+}
+
 function renderGrid() {
   const grid = document.getElementById('grid');
-  const list = activeTab === 'all'
-    ? allArticles
-    : allArticles.filter(a => a.feedId === activeTab);
-
+  const list = visibleList();
   if (!list.length) {
-    const msg = isLoading
-      ? 'Loading articles for this category…'
-      : 'No articles found yet. Try refreshing in a moment.';
+    const msg = isLoading ? 'Loading articles for this category…' : 'No articles yet. Pull Refresh to scrape sources.';
     grid.innerHTML = `<div class="empty"><span class="empty-icon">📭</span>${msg}</div>`;
     return;
   }
-
-  grid.innerHTML = list.map(a => `
-    <div class="card">
-      <div class="card-top">
-        <span class="badge" style="color:${a.feed.color};background:${a.feed.bg}">${a.feed.label}</span>
-        <span class="card-src">${a.source}</span>
+  grid.innerHTML = list.map(a => {
+    const f = FEED_BY_ID[a.feedId] || FEEDS[0];
+    return `
+    <div class="card-wrap" data-id="${a.id}">
+      <div class="card-under">Not relevant
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </div>
-      <div class="card-title">
-        <a href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
+      <div class="card" data-id="${a.id}">
+        <div class="card-top">
+          <span class="badge" style="color:${f.color};background:${f.bg}">${f.label}</span>
+          <span class="card-src">${escHtml(a.source)}</span>
+        </div>
+        <div class="card-title"><a href="${escHtml(a.link)}" target="_blank" rel="noopener">${escHtml(a.title)}</a></div>
+        ${a.excerpt ? `<div class="card-excerpt">${escHtml(a.excerpt)}</div>` : ''}
+        ${ratingDotsHtml(a)}
+        <div class="card-foot">
+          <span class="card-date">${relTime(tsFor(a))}</span>
+          <div class="card-actions">
+            <button class="act-btn" data-reader="${a.id}">Reader / PDF</button>
+            <a class="act-btn" href="${escHtml(a.link)}" target="_blank" rel="noopener">Open →</a>
+          </div>
+        </div>
       </div>
-      ${a.excerpt ? `<div class="card-excerpt">${a.excerpt}</div>` : ''}
-      <div class="card-foot">
-        <span class="card-date">${relTime(a.date)}</span>
-        <a class="read-link" href="${a.link}" target="_blank" rel="noopener">Read →</a>
-      </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
-function setTab(id) {
-  activeTab = id;
-  renderTabs();
+function setTab(id) { activeTab = id; renderTabs(); renderGrid(); }
+
+// ---------- FEEDBACK: RATING ----------
+function saveMyFeedback() { try { localStorage.setItem('nsl_my_feedback', JSON.stringify(myFeedback)); } catch {} }
+function setRating(id, rating) {
+  myFeedback[id] = { ...(myFeedback[id] || {}), rating };
+  saveMyFeedback();
+  apiPushFeedback({ articleId: id, rating });
   renderGrid();
 }
 
-// ---------- EVENT WIRING ----------
-document.getElementById('refresh-btn').addEventListener('click', () => {
-  sessionStorage.removeItem(CACHE_KEY);
-  loadAll({ useCache: false });
+// ---------- FEEDBACK: SWIPE-AWAY ----------
+function dismissArticle(id, viaSwipe) {
+  const a = allArticles.find(x => x.id === id);
+  myFeedback[id] = { ...(myFeedback[id] || {}), dismissed: true };
+  saveMyFeedback();
+  apiPushFeedback({ articleId: id, dismissed: true });
+  lastDismissed = id;
+  showToast(`Removed: ${a ? a.title.slice(0, 50) : 'article'}…`);
+  if (!viaSwipe) renderGrid();
+  renderTabs();
+}
+function undoDismiss() {
+  if (!lastDismissed) return;
+  myFeedback[lastDismissed] = { ...(myFeedback[lastDismissed] || {}), dismissed: false };
+  saveMyFeedback();
+  apiPushFeedback({ articleId: lastDismissed, dismissed: false });
+  lastDismissed = null;
+  hideToast(); renderTabs(); renderGrid();
+}
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  t.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, 5000);
+}
+function hideToast() { document.getElementById('toast').classList.remove('visible'); }
+
+// touch swipe handling (delegated)
+let swipe = null;
+const grid = document.getElementById('grid');
+grid.addEventListener('touchstart', (e) => {
+  const card = e.target.closest('.card');
+  if (!card || e.target.closest('a, button')) return;
+  swipe = { card, x0: e.touches[0].clientX, y0: e.touches[0].clientY, dx: 0, active: false };
+}, { passive: true });
+grid.addEventListener('touchmove', (e) => {
+  if (!swipe) return;
+  const dx = e.touches[0].clientX - swipe.x0;
+  const dy = e.touches[0].clientY - swipe.y0;
+  if (!swipe.active) {
+    if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.4) { swipe.active = true; swipe.card.classList.add('swiping'); }
+    else if (Math.abs(dy) > 14) { swipe = null; return; }
+    else return;
+  }
+  swipe.dx = dx;
+  swipe.card.style.transform = `translateX(${dx}px)`;
+  swipe.card.style.opacity = String(Math.max(0.35, 1 - Math.abs(dx) / 300));
+}, { passive: true });
+grid.addEventListener('touchend', () => {
+  if (!swipe) return;
+  const { card, dx, active } = swipe; swipe = null;
+  if (!active) return;
+  card.classList.remove('swiping');
+  const threshold = Math.min(140, card.offsetWidth * 0.4);
+  if (Math.abs(dx) > threshold) {
+    const wrap = card.closest('.card-wrap');
+    const id = card.dataset.id;
+    card.classList.add('flying');
+    card.style.transform = `translateX(${(dx > 0 ? 1 : -1) * card.offsetWidth * 1.2}px)`;
+    wrap.style.maxHeight = wrap.offsetHeight + 'px';
+    setTimeout(() => { wrap.classList.add('collapsing'); }, 180);
+    setTimeout(() => { dismissArticle(id, true); renderGrid(); }, 430);
+  } else {
+    card.classList.add('snap-back');
+    card.style.transform = ''; card.style.opacity = '';
+    setTimeout(() => card.classList.remove('snap-back'), 220);
+  }
 });
+
+// ---------- READER VIEW + PDF ----------
+let readerArticle = null, readerParas = [];
+function extractArticle(html, baseUrl) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('script, style, noscript, nav, header, footer, aside, form, iframe, svg, button, [role="navigation"], [class*="related"], [class*="newsletter"], [class*="subscribe"], [class*="promo"], [class*="comment"]').forEach(n => n.remove());
+  // candidate containers: prefer <article>, else densest <p> cluster
+  let best = doc.querySelector('article');
+  if (!best) {
+    let bestLen = 0;
+    doc.querySelectorAll('main, section, div').forEach(el => {
+      let len = 0;
+      el.querySelectorAll(':scope > p, :scope > * > p').forEach(p => len += (p.textContent || '').length);
+      if (len > bestLen) { bestLen = len; best = el; }
+    });
+  }
+  if (!best) best = doc.body;
+  const out = [];
+  best.querySelectorAll('h1, h2, h3, p, li, blockquote').forEach(el => {
+    const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (txt.length < 30 && !/^h[1-3]$/i.test(el.tagName)) return;
+    if (txt.length < 4) return;
+    out.push({ tag: /^h[1-3]$/i.test(el.tagName) ? 'h2' : 'p', text: txt });
+  });
+  // dedupe consecutive repeats
+  return out.filter((b, i) => !i || b.text !== out[i - 1].text).slice(0, 220);
+}
+async function openReader(id) {
+  const a = allArticles.find(x => x.id === id);
+  if (!a) return;
+  readerArticle = a; readerParas = [];
+  document.getElementById('reader-title').textContent = a.source || '';
+  const inner = document.getElementById('reader-inner');
+  inner.innerHTML = `<h1>${escHtml(a.title)}</h1>
+    <div class="reader-meta">${escHtml(a.source)} · ${relTime(tsFor(a))} · <a href="${escHtml(a.link)}" target="_blank" rel="noopener">original article</a></div>
+    <div class="reader-loading">Fetching article text…</div>`;
+  document.getElementById('reader').classList.add('open');
+  const html = await fetchUrl(a.link);
+  if (!readerArticle || readerArticle.id !== id) return; // closed/changed
+  if (!html) {
+    inner.querySelector('.reader-loading').textContent = 'Could not fetch this article (site may block readers). Use "original article" above.';
+    return;
+  }
+  readerParas = extractArticle(html, a.link);
+  if (!readerParas.length) {
+    inner.querySelector('.reader-loading').textContent = 'No readable text found. Use "original article" above.';
+    return;
+  }
+  inner.querySelector('.reader-loading').remove();
+  inner.insertAdjacentHTML('beforeend', readerParas.map(b => `<${b.tag}>${escHtml(b.text)}</${b.tag}>`).join(''));
+}
+function closeReader() { document.getElementById('reader').classList.remove('open'); readerArticle = null; }
+
+// PDF (text-only by design — news photos are nearly always copyrighted)
+let jsPdfPromise = null;
+function loadJsPdf() {
+  if (window.jspdf) return Promise.resolve();
+  if (!jsPdfPromise) {
+    jsPdfPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  return jsPdfPromise;
+}
+async function downloadPdf() {
+  if (!readerArticle) return;
+  try { await loadJsPdf(); } catch { alert('PDF library failed to load (offline?). Try Print instead.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
+  const M = 54, maxW = W - M * 2;
+  let y = M;
+  const addPageIfNeeded = (h) => { if (y + h > H - M) { doc.addPage(); y = M; } };
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+  for (const line of doc.splitTextToSize(readerArticle.title, maxW)) { addPageIfNeeded(20); doc.text(line, M, y); y += 20; }
+  y += 4;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(120);
+  const meta = `${readerArticle.source || ''} · ${new Date(tsFor(readerArticle) || Date.now()).toLocaleDateString()} · ${readerArticle.link}`;
+  for (const line of doc.splitTextToSize(meta, maxW)) { addPageIfNeeded(12); doc.text(line, M, y); y += 12; }
+  y += 10; doc.setDrawColor(200); doc.line(M, y, W - M, y); y += 18;
+  doc.setTextColor(30);
+  const blocks = readerParas.length ? readerParas : [{ tag: 'p', text: readerArticle.excerpt || '(Full text was not available — excerpt only.)' }];
+  for (const b of blocks) {
+    if (b.tag === 'h2') { doc.setFont('helvetica', 'bold'); doc.setFontSize(12); y += 6; }
+    else { doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5); }
+    const lines = doc.splitTextToSize(b.text, maxW);
+    for (const line of lines) { addPageIfNeeded(15); doc.text(line, M, y); y += 15; }
+    y += 6;
+  }
+  doc.setFontSize(8); doc.setTextColor(150);
+  const safe = (readerArticle.title || 'article').replace(/[^a-z0-9]+/gi, '-').slice(0, 60);
+  doc.save(`${safe}.pdf`);
+}
+
+// ---------- EVENT WIRING ----------
+document.getElementById('refresh-btn').addEventListener('click', () => loadAll({ force: true }));
 document.getElementById('tabs').addEventListener('click', (e) => {
   const tab = e.target.closest('[data-tab]');
   if (tab) setTab(tab.dataset.tab);
 });
+grid.addEventListener('click', (e) => {
+  const dot = e.target.closest('.rdot');
+  if (dot) { setRating(dot.closest('.rating-row').dataset.id, +dot.dataset.rate); return; }
+  const rd = e.target.closest('[data-reader]');
+  if (rd) { openReader(rd.dataset.reader); return; }
+});
+document.getElementById('toast-undo').addEventListener('click', undoDismiss);
+document.getElementById('reader-close').addEventListener('click', closeReader);
+document.getElementById('reader-print').addEventListener('click', () => window.print());
+document.getElementById('reader-pdf').addEventListener('click', downloadPdf);
+window.addEventListener('online',  () => document.getElementById('offline-pill').classList.remove('visible'));
+window.addEventListener('offline', () => document.getElementById('offline-pill').classList.add('visible'));
 
-loadAll({ useCache: true });
+// ---------- OFFLINE SHELL ----------
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+
+loadAll();
 </script>
 </body>
 </html>
