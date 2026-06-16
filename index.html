@@ -230,6 +230,61 @@ const RELEVANCE_TERMS = [
   ...SEO_KEYWORDS.map(k => k.toLowerCase()),
 ];
 
+// ============================================================
+// COMPETITORS TAB FOCUS
+// The Competitors tab should be about what rivals are DOING —
+// product launches, partnerships, contracts, big deals — NOT
+// stock-market chatter (analyst ratings, price targets, etc.).
+// Two mechanisms below enforce that:
+//   1) COMPETITOR_NAMES cross-tags any article (from any tab) that
+//      mentions a rival into Competitors, so a roofing/insurance
+//      story about EagleView also shows up here.
+//   2) ANNOUNCEMENT_SIGNALS / STOCK_NOISE_* push out pure markets
+//      coverage unless the piece is also a real business event.
+// ============================================================
+const COMPETITOR_NAMES = [
+  'nearmap', 'eagleview', 'eagle view', 'vexcel', 'planet labs',
+  'maxar', 'blacksky', 'black sky', 'satellogic', 'zeitview',
+  'dronedeploy', 'drone deploy', 'spexi', 'pictometry',
+];
+// Business-event language. If any of these appear, the article is a
+// real announcement/deal/product story and is kept even if it also
+// mentions markets (e.g. a funding round or a publicly-traded rival).
+const ANNOUNCEMENT_SIGNALS = [
+  'announce', 'announces', 'announced', 'launch', 'launches', 'launched',
+  'unveil', 'unveils', 'unveiled', 'introduce', 'introduces', 'introduced',
+  'rolls out', 'roll out', 'rolled out', 'release', 'releases', 'released',
+  'debut', 'debuts', 'partnership', 'partner with', 'partners with',
+  'teams up', 'collaborat', 'expand', 'expands', 'expanded', 'expansion',
+  'contract', 'awarded', 'wins ', 'won ', 'selected', ' deal', 'agreement',
+  'acquire', 'acquires', 'acquired', 'acquisition', 'merger', 'merges',
+  'new product', 'new feature', 'new tool', 'new platform', 'now available',
+  'integration', 'integrates', 'rollout', 'signs ', 'signed ',
+  'raises', 'raised', 'funding', 'series a', 'series b', 'series c',
+  'seed round', 'million in', 'venture', 'go-to-market', 'go to market',
+];
+// Markets/finance language and finance-only publishers.
+const STOCK_NOISE_TERMS = [
+  'stock', 'shares', 'share price', 'nasdaq', 'nyse', 'price target',
+  'buy rating', 'sell rating', 'hold rating', 'analyst', 'analysts',
+  'earnings per share', 'market cap', 'market capitalization',
+  'dividend', 'shareholder', 'should you buy', 'should you sell',
+  'upgraded', 'downgraded', 'outperform', 'underperform', 'overweight',
+  'underweight', '52-week', '52 week', 'p/e ratio', 'pe ratio',
+  'short interest', 'insider selling', 'insider buying', 'hedge fund',
+  'institutional investor', 'quarterly earnings', 'earnings report',
+  'revenue beat', 'misses estimates', 'beats estimates', 'wall street',
+  'valuation', 'moving average', 'bullish', 'bearish', 'sec filing',
+  'stake in', 'buy or sell', 'price prediction', 'forecast', 'target price',
+];
+const STOCK_NOISE_SOURCES = [
+  'fool.com', 'motley fool', 'zacks', 'marketbeat', 'benzinga',
+  'tipranks', 'simplywall.st', 'simply wall st', 'seekingalpha',
+  'seeking alpha', 'investorplace', 'insidermonkey', 'insider monkey',
+  'barchart', 'stocktwits', 'wallstreetzen', 'thestreet', 'investing.com',
+  'finbold', 'marketwatch', 'nasdaq.com', 'tradingview',
+];
+
 const FEEDS = [
   // ============================================================
   // NEAR SPACE LABS — press page + Bing + GDELT (3-month reach)
@@ -383,6 +438,16 @@ const SEED_ARTICLES = [
     publishedAt: Date.UTC(2026, 2, 10, 20, 24),
     excerpt: 'Rema Matevosyan of Near Space Labs recognized for guiding the AI-backed near-space monitoring company toward significant growth by securing $20 million in Series B funding.',
   },
+  {
+    // Lands in Roofing by topic, but cross-tags into Competitors
+    // because it names EagleView — exactly the behavior we want.
+    feedId: 'roofing',
+    title: 'SeekNow and EagleView Expand Partnership to Ensure Customers Have the Highest Quality 3D Roofing Measurements',
+    link: 'https://www.usatoday.com/press-release/story/31437/seeknow-and-eagleview-expand-partnership-to-ensure-customers-have-the-highest-quality-3d-roofing-measurements/',
+    source: 'usatoday.com',
+    publishedAt: Date.UTC(2026, 5, 10, 13, 0),
+    excerpt: 'SeekNow and EagleView announced an expanded partnership giving customers access to EagleView’s highest-quality 3D roofing measurement data for property inspections and claims.',
+  },
 ];
 
 // ---------- DEVICE ID ----------
@@ -431,6 +496,32 @@ function isFresh(a) { const t = tsFor(a); return !t || (Date.now() - t) <= MAX_A
 function isRelevant(a) {
   const blob = `${a.title} ${a.excerpt}`.toLowerCase();
   return RELEVANCE_TERMS.some(term => term && blob.includes(term));
+}
+// Which tabs an article belongs to. Always its own feed; additionally
+// the Competitors tab if it names a rival (so a roofing/insurance story
+// about EagleView, Nearmap, etc. surfaces under Competitors too).
+function articleTabs(a) {
+  const tabs = [a.feedId];
+  if (a.feedId !== 'competitors') {
+    const blob = `${a.title} ${a.excerpt}`.toLowerCase();
+    if (COMPETITOR_NAMES.some(n => blob.includes(n))) tabs.push('competitors');
+  }
+  return tabs;
+}
+function hasAnnouncementSignal(a) {
+  const blob = `${a.title} ${a.excerpt}`.toLowerCase();
+  return ANNOUNCEMENT_SIGNALS.some(t => blob.includes(t));
+}
+// True when an item is really just markets/stock coverage. Such items
+// are hidden from the Competitors tab unless they also describe a real
+// business event (announcement, deal, product, funding).
+function isStockNoise(a) {
+  if (hasAnnouncementSignal(a)) return false;
+  const blob = `${a.title} ${a.excerpt}`.toLowerCase();
+  const src = (a.source || '').toLowerCase();
+  if (STOCK_NOISE_SOURCES.some(s => src.includes(s))) return true;
+  const hits = STOCK_NOISE_TERMS.filter(t => blob.includes(t)).length;
+  return hits >= 2;
 }
 function dedupMerge(into, items) {
   const byId = new Map(into.map(a => [a.id, a]));
@@ -790,7 +881,10 @@ async function loadAll(opts = {}) {
 function visibleList() {
   const weights = buildWeights();
   let list = allArticles.filter(a => !(myFeedback[a.id] && myFeedback[a.id].dismissed));
-  if (activeTab !== 'all') list = list.filter(a => a.feedId === activeTab);
+  if (activeTab !== 'all') list = list.filter(a => articleTabs(a).includes(activeTab));
+  // Competitors tab = what rivals are doing (launches, deals, partnerships),
+  // not stock-market chatter. Drop pure markets coverage here.
+  if (activeTab === 'competitors') list = list.filter(a => !isStockNoise(a));
   // demote (not delete) team-flagged noise: 2+ dismissals or low score on broad queries
   const demoted = [], main = [];
   for (const a of list) {
@@ -811,8 +905,12 @@ function renderTabs() {
   const counts = {};
   for (const a of allArticles) {
     if (myFeedback[a.id] && myFeedback[a.id].dismissed) continue;
-    counts[a.feedId] = (counts[a.feedId] || 0) + 1;
     counts.all = (counts.all || 0) + 1;
+    for (const t of articleTabs(a)) {
+      // mirror the Competitors view filter so its count stays honest
+      if (t === 'competitors' && isStockNoise(a)) continue;
+      counts[t] = (counts[t] || 0) + 1;
+    }
   }
   const defs = [
     { id: 'all', label: 'All', color: '#1A1511', count: counts.all || 0 },
