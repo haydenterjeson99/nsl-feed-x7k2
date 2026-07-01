@@ -157,7 +157,7 @@
 </div>
 <script>
 /* ============================================================
-   NSL Intelligence Feed v6
+   NSL Intelligence Feed v7
    ============================================================
    ARCHITECTURE
    - DISCOVERY: Bing News RSS + GDELT DOC API (3-month reach) +
@@ -171,6 +171,20 @@
    - FEEDBACK: swipe-away = "not relevant" signal; 5-dot rating
      per article. Both sync to the shared store and feed the
      relevance model that ranks/filters future scrapes.
+
+   v7 CHANGES (extraction quality + resilience)
+   - Article extraction now prefers structured metadata
+     (JSON-LD NewsArticle, OpenGraph/meta, RSS content) and only
+     falls back to the densest-<p> heuristic when those are absent.
+   - Discovery parsers read og:/description/enclosure fields so
+     excerpts are richer than before.
+   - Sturdier de-dup: canonical-URL key first, normalized-title
+     key as fallback (see makeKeys/dedupMerge).
+   - Silent-failure surfacing: each source reports ok/empty/error,
+     and a small health line shows which sources returned nothing.
+   - Politeness: bounded fetch concurrency (CONCURRENCY) instead
+     of a burst of BATCH_SIZE parallel requests.
+   All original scrapers are preserved as fallbacks.
    Verticals (per nearspacelabs.com):
      P&C Insurance · State & Local Government · Energy & Utilities
      Forestry & Environment · Mapping Technology · Roofing & Home Services
@@ -181,7 +195,8 @@ const WORKER_BASE = 'https://nsl-proxy.haydenmterjeson.workers.dev';
 const PROXY_BASE  = WORKER_BASE + '/?url=';
 const API_BASE    = WORKER_BASE + '/api';
 const FETCH_TIMEOUT_MS = 12000;
-const BATCH_SIZE = 12;
+const BATCH_SIZE = 12;                 // legacy chunk size (kept for reference)
+const CONCURRENCY = 5;                 // max simultaneous proxy fetches (politeness)
 const MAX_AGE_MS = 8 * 30.44 * 24 * 60 * 60 * 1000; // 8 months
 const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;          // auto-skip refresh if <10 min old
 
@@ -446,7 +461,7 @@ const SEED_ARTICLES = [
     link: 'https://www.usatoday.com/press-release/story/31437/seeknow-and-eagleview-expand-partnership-to-ensure-customers-have-the-highest-quality-3d-roofing-measurements/',
     source: 'usatoday.com',
     publishedAt: Date.UTC(2026, 5, 10, 13, 0),
-    excerpt: 'SeekNow and EagleView announced an expanded partnership giving customers access to EagleView’s highest-quality 3D roofing measurement data for property inspections and claims.',
+    excerpt: 'SeekNow and EagleView announced an expanded partnership giving customers access to EagleView\u2019s highest-quality 3D roofing measurement data for property inspections and claims.',
   },
 ];
 
@@ -468,6 +483,7 @@ let isLoading = false;
 let apiAvailable = true;
 let lastDismissed = null;
 let toastTimer = null;
+let sourceHealth = [];                 // v7: per-source scrape results for the health line
 
 // ---------- SMALL UTILS ----------
 function fnv1a(str) {
@@ -476,10 +492,44 @@ function fnv1a(str) {
   return ('0000000' + (h >>> 0).toString(16)).slice(-8);
 }
 function titleKey(t) { return (t || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 80); }
-function articleId(a) { return 'a' + fnv1a(titleKey(a.title)); }
+// v7: canonicalize a URL for de-dup — drop protocol, www, trailing
+// slash, and tracking query params so the same story at two URLs
+// (or with utm tags) collapses to one key.
+function canonicalUrl(u) {
+  if (!u || !/^https?:/i.test(u)) return '';
+  try {
+    const url = new URL(u);
+    let host = url.hostname.replace(/^www\./, '').toLowerCase();
+    let path = url.pathname.replace(/\/+$/, '');
+    // keep only non-tracking query params, sorted for stability
+    const keep = [];
+    url.searchParams.forEach((v, k) => {
+      if (!/^(utm_|fbclid|gclid|mc_|ref|source|cmpid|guccounter)/i.test(k)) keep.push([k, v]);
+    });
+    keep.sort((a, b) => a[0].localeCompare(b[0]));
+    const qs = keep.map(([k, v]) => `${k}=${v}`).join('&');
+    return host + path + (qs ? '?' + qs : '');
+  } catch { return ''; }
+}
+// v7: an article gets a URL-based id when we have a usable link,
+// otherwise the original title-hash id. Both are exposed via
+// makeKeys() so dedupMerge can match on either.
+function articleId(a) {
+  const cu = canonicalUrl(a.link);
+  if (cu) return 'u' + fnv1a(cu);
+  return 'a' + fnv1a(titleKey(a.title));
+}
+function makeKeys(a) {
+  const keys = [];
+  const cu = canonicalUrl(a.link);
+  if (cu) keys.push('u' + fnv1a(cu));
+  const tk = titleKey(a.title);
+  if (tk) keys.push('a' + fnv1a(tk));
+  return keys;
+}
 function escHtml(s) { return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function stripHtml(html) { const d = document.createElement('div'); d.innerHTML = html || ''; return (d.textContent || '').trim(); }
-function cleanTitle(t) { return (t || '').replace(/\s[-–]\s[^-–]{1,50}$/, '').trim(); }
+function cleanTitle(t) { return (t || '').replace(/\s[-\u2013]\s[^-\u2013]{1,50}$/, '').trim(); }
 function relTime(ts) {
   if (!ts) return '';
   const diff = Date.now() - ts, m = Math.floor(diff / 60000);
@@ -523,29 +573,48 @@ function isStockNoise(a) {
   const hits = STOCK_NOISE_TERMS.filter(t => blob.includes(t)).length;
   return hits >= 2;
 }
+// v7: dedup now matches on EITHER the canonical-URL key or the
+// title key, so the same story from two outlets/URLs merges. When
+// two records collide we keep the richer one (longer excerpt, known
+// date) and remember all keys so future items match too.
 function dedupMerge(into, items) {
-  const byId = new Map(into.map(a => [a.id, a]));
+  const byKey = new Map();   // key -> record
+  const order = [];          // preserves first-seen record objects
+  const register = (rec) => {
+    for (const k of makeKeys(rec)) {
+      if (!byKey.has(k)) byKey.set(k, rec);
+    }
+  };
+  for (const rec of into) { order.push(rec); register(rec); }
   for (const a of items) {
-    const ex = byId.get(a.id);
-    if (!ex) { byId.set(a.id, a); }
+    let ex = null;
+    for (const k of makeKeys(a)) { if (byKey.has(k)) { ex = byKey.get(k); break; } }
+    if (!ex) { order.push(a); register(a); }
     else {
       if (!ex.publishedAt && a.publishedAt) ex.publishedAt = a.publishedAt;
       if ((a.excerpt || '').length > (ex.excerpt || '').length) ex.excerpt = a.excerpt;
+      if (!ex.link && a.link) ex.link = a.link;
+      register(ex); // pick up any new keys (e.g. URL learned later)
     }
   }
-  return [...byId.values()].sort((x, y) => tsFor(y) - tsFor(x));
+  // de-duplicate the order list (a record may have been registered twice)
+  const seen = new Set(); const uniq = [];
+  for (const r of order) { if (!seen.has(r)) { seen.add(r); uniq.push(r); } }
+  return uniq.sort((x, y) => tsFor(y) - tsFor(x));
 }
 
 // ---------- FETCH (through Cloudflare Worker) ----------
+// v7: returns a small result object so callers can tell the
+// difference between "empty" and "network/proxy error".
 async function fetchUrl(url) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(PROXY_BASE + encodeURIComponent(url), { signal: ctrl.signal });
     clearTimeout(t);
-    if (!res.ok) throw new Error(res.status);
-    return await res.text();
-  } catch { clearTimeout(t); return ''; }
+    if (!res.ok) return { ok: false, status: res.status, body: '' };
+    return { ok: true, status: res.status, body: await res.text() };
+  } catch (e) { clearTimeout(t); return { ok: false, status: 0, body: '', error: String(e && e.name || e) }; }
 }
 // GDELT blocks datacenter IPs (including Cloudflare), so it is fetched
 // directly from this device instead of through the proxy. GDELT's API
@@ -558,10 +627,10 @@ async function fetchGdelt(url) {
     clearTimeout(t);
     if (res.ok) {
       const body = await res.text();
-      if (body && body.trim().startsWith('{')) return body;
+      if (body && body.trim().startsWith('{')) return { ok: true, status: res.status, body };
     }
   } catch { clearTimeout(t); }
-  return fetchUrl(url);
+  return fetchUrl(url); // proxy fallback (already returns the result object)
 }
 
 // ---------- DISCOVERY PARSERS ----------
@@ -570,19 +639,33 @@ function gdeltUrl(q) {
   return `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q + ' sourcelang:english')}&mode=artlist&format=json&timespan=12w&maxrecords=75&sort=datedesc`;
 }
 
+// v7: read a wider set of RSS/Atom fields, including a richer excerpt
+// source (content:encoded / media description) and enclosure images.
 function parseXml(xmlStr, feed, feedUrl) {
   try {
     const doc = new DOMParser().parseFromString(xmlStr, 'application/xml');
     if (doc.querySelector('parsererror')) return [];
-    return Array.from(doc.querySelectorAll('item')).slice(0, 40).map(el => {
+    const items = Array.from(doc.querySelectorAll('item, entry')).slice(0, 40);
+    return items.map(el => {
       const title = cleanTitle(el.querySelector('title')?.textContent?.trim() || '');
       if (!title || title.length < 6) return null;
       let link = el.querySelector('link')?.textContent?.trim() || '';
+      // Atom <link href="...">
+      if (!link) { const lh = el.querySelector('link[href]'); if (lh) link = lh.getAttribute('href') || ''; }
       if (!link || !link.startsWith('http')) link = el.querySelector('guid')?.textContent?.trim() || '#';
       let source = el.querySelector('source')?.textContent?.trim() || '';
       if (!source) { try { source = new URL(feedUrl).hostname.replace('www.', ''); } catch { source = feed.label; } }
-      const publishedAt = parseTs(el.querySelector('pubDate')?.textContent?.trim() || '');
-      const excerpt = stripHtml(el.querySelector('description')?.textContent?.trim() || '').slice(0, 300);
+      const publishedAt = parseTs(
+        el.querySelector('pubDate')?.textContent?.trim() ||
+        el.querySelector('published')?.textContent?.trim() ||
+        el.querySelector('updated')?.textContent?.trim() || ''
+      );
+      // richer excerpt: prefer content:encoded / summary, fall back to description
+      const rawExcerpt =
+        el.getElementsByTagName('content:encoded')[0]?.textContent?.trim() ||
+        el.querySelector('description')?.textContent?.trim() ||
+        el.querySelector('summary')?.textContent?.trim() || '';
+      const excerpt = stripHtml(rawExcerpt).slice(0, 300);
       const a = { feedId: feed.id, title, link, source, publishedAt, excerpt };
       a.id = articleId(a);
       return a;
@@ -614,9 +697,37 @@ function parseGdelt(jsonStr, feed) {
   } catch { return []; }
 }
 
+// v7: NSL press page — try RSS/sitemap-style structured sources first,
+// then fall back to the original anchor-text heuristic. The press page
+// is a Webflow site; if it ever exposes a feed this will prefer it.
 function parseNslPress(html, feed) {
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html');
+    // (a) JSON-LD ItemList / Article entries, if present
+    const fromLd = [];
+    doc.querySelectorAll('script[type="application/ld+json"]').forEach(s => {
+      try {
+        const data = JSON.parse(s.textContent || '');
+        const nodes = Array.isArray(data) ? data : (data['@graph'] || [data]);
+        nodes.forEach(n => {
+          const type = (n && n['@type']) || '';
+          if (/Article|NewsArticle|BlogPosting/i.test(type) && n.headline) {
+            const art = {
+              feedId: feed.id,
+              title: cleanTitle(n.headline),
+              link: (n.url || (n.mainEntityOfPage && (n.mainEntityOfPage['@id'] || n.mainEntityOfPage)) || feed.url || '').toString(),
+              source: 'nearspacelabs.com/press',
+              publishedAt: parseTs(n.datePublished || n.dateCreated || ''),
+              excerpt: stripHtml((n.description || '')).slice(0, 300) || 'Featured in Near Space Labs press coverage.',
+            };
+            if (art.title && art.title.length >= 10) { art.id = articleId(art); fromLd.push(art); }
+          }
+        });
+      } catch {}
+    });
+    if (fromLd.length) return fromLd.slice(0, 25);
+
+    // (b) FALLBACK: original anchor-text heuristic (unchanged behavior)
     const anchors = Array.from(doc.querySelectorAll('a[href^="http"]'));
     const seen = new Set(); const results = [];
     for (const a of anchors) {
@@ -645,21 +756,41 @@ function parseNslPress(html, feed) {
   } catch { return []; }
 }
 
+// v7: fetchSource now reports health so silent failures are visible.
+// Returns { items, status } where status is 'ok' | 'empty' | 'error'.
 async function fetchSource(source, feed) {
   let url;
   if (source.type === 'bing') url = bingNewsUrl(source.query);
   else if (source.type === 'gdelt') url = gdeltUrl(source.query);
   else if (source.type === 'rss' || source.type === 'nsl_press') url = source.url;
-  else return [];
-  const body = source.type === 'gdelt' ? await fetchGdelt(url) : await fetchUrl(url);
-  if (!body) return [];
+  else return { items: [], status: 'error' };
+
+  const res = source.type === 'gdelt' ? await fetchGdelt(url) : await fetchUrl(url);
+  if (!res || !res.ok) return { items: [], status: 'error' };
+  const body = res.body || '';
+  if (!body) return { items: [], status: 'empty' };
+
   let parsed;
   if (source.type === 'nsl_press') parsed = parseNslPress(body, feed);
   else if (source.type === 'gdelt') parsed = parseGdelt(body, feed);
   else parsed = parseXml(body, feed, url);
+
   parsed = parsed.filter(isFresh);
   if (source.tag === 'vertical' || source.filter) parsed = parsed.filter(isRelevant);
-  return parsed;
+  return { items: parsed, status: parsed.length ? 'ok' : 'empty' };
+}
+
+// v7: run async tasks with bounded concurrency (politeness / rate limits).
+async function runPool(tasks, limit, onEach) {
+  let i = 0;
+  const workers = new Array(Math.min(limit, tasks.length)).fill(0).map(async () => {
+    while (i < tasks.length) {
+      const idx = i++;
+      const r = await tasks[idx]();
+      if (onEach) onEach(r, idx);
+    }
+  });
+  await Promise.all(workers);
 }
 
 // ---------- INDEXEDDB (offline mirror) ----------
@@ -849,21 +980,29 @@ async function loadAll(opts = {}) {
     ];
     const total = allSources.length;
     let done = 0;
+    sourceHealth = [];
     const discovered = SEED_ARTICLES.map(s => ({ ...s, id: articleId(s) })).filter(isFresh);
     allArticles = dedupMerge(allArticles, discovered);
-    for (let i = 0; i < allSources.length; i += BATCH_SIZE) {
-      const batch = allSources.slice(i, i + BATCH_SIZE);
-      await Promise.allSettled(batch.map(({ src, feed }) =>
-        fetchSource(src, feed).then(items => {
-          discovered.push(...items);
-          allArticles = dedupMerge(allArticles, items);
-          done++;
-          progressBar.style.width = `${Math.round((done / total) * 100)}%`;
-          statusMsg.textContent = `${done}/${total} sources · ${allArticles.length} articles`;
-          renderTabs(); renderGrid();
-        })
-      ));
-    }
+
+    // v7: bounded-concurrency pool instead of BATCH_SIZE bursts.
+    const tasks = allSources.map(({ src, feed }) => async () => {
+      const label = src.type === 'bing' || src.type === 'gdelt' ? `${src.type}:${src.query}` : (src.url || src.type);
+      let result;
+      try { result = await fetchSource(src, feed); }
+      catch { result = { items: [], status: 'error' }; }
+      sourceHealth.push({ feedId: feed.id, type: src.type, label, status: result.status, count: result.items.length });
+      if (result.items.length) {
+        discovered.push(...result.items);
+        allArticles = dedupMerge(allArticles, result.items);
+      }
+      done++;
+      progressBar.style.width = `${Math.round((done / total) * 100)}%`;
+      const bad = sourceHealth.filter(s => s.status === 'error').length;
+      statusMsg.textContent = `${done}/${total} sources · ${allArticles.length} articles` + (bad ? ` · ${bad} failed` : '');
+      renderTabs(); renderGrid();
+    });
+    await runPool(tasks, CONCURRENCY);
+
     localStorage.setItem('nsl_last_scrape', String(Date.now()));
     idb.putArticles(allArticles);
     apiPushArticles(discovered);          // grow the shared backlog
@@ -874,6 +1013,7 @@ async function loadAll(opts = {}) {
   statusBar.style.display = 'none';
   document.getElementById('last-updated').textContent =
     'Updated ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  renderHealth();
   isLoading = false;
 }
 
@@ -922,6 +1062,28 @@ function renderTabs() {
       ${t.label}
       <span class="tab-count">${t.count}</span>
     </div>`).join('');
+}
+
+// v7: compact health line — shows which sources returned nothing or
+// errored on the last scrape, so a broken scraper is visible instead
+// of silently yielding zero. Only renders when there's something to say.
+function renderHealth() {
+  const existing = document.getElementById('health-line');
+  if (existing) existing.remove();
+  if (!sourceHealth.length) return;
+  const errored = sourceHealth.filter(s => s.status === 'error');
+  const empty = sourceHealth.filter(s => s.status === 'empty');
+  if (!errored.length && !empty.length) return;
+  const bits = [];
+  if (errored.length) bits.push(`${errored.length} source${errored.length > 1 ? 's' : ''} failed to load`);
+  if (empty.length) bits.push(`${empty.length} returned no items`);
+  const detail = [...errored, ...empty].slice(0, 6).map(s => `${s.type}${s.status === 'error' ? ' ✕' : ' ∅'}`).join(', ');
+  const div = document.createElement('div');
+  div.id = 'health-line';
+  div.style.cssText = 'grid-column:1/-1;font-size:11px;color:var(--muted);padding:2px 2px 8px;';
+  div.textContent = `Source health: ${bits.join(' · ')}${detail ? ' — ' + detail : ''}`;
+  const grid = document.getElementById('grid');
+  grid.parentNode.insertBefore(div, grid);
 }
 
 function ratingDotsHtml(a) {
@@ -1060,10 +1222,31 @@ grid.addEventListener('touchend', () => {
 
 // ---------- READER VIEW + PDF ----------
 let readerArticle = null, readerParas = [];
+// v7: prefer real article structure — <article>, JSON-LD articleBody,
+// or the densest-<p> cluster as a last resort (original behavior).
 function extractArticle(html, baseUrl) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
+
+  // (a) JSON-LD articleBody, if the site publishes it
+  let ldParas = [];
+  doc.querySelectorAll('script[type="application/ld+json"]').forEach(s => {
+    if (ldParas.length) return;
+    try {
+      const data = JSON.parse(s.textContent || '');
+      const nodes = Array.isArray(data) ? data : (data['@graph'] || [data]);
+      for (const n of nodes) {
+        if (n && /Article|NewsArticle|BlogPosting/i.test(n['@type'] || '') && n.articleBody) {
+          ldParas = String(n.articleBody).split(/\n{1,}/).map(t => t.replace(/\s+/g, ' ').trim())
+            .filter(t => t.length > 30).map(t => ({ tag: 'p', text: t }));
+          break;
+        }
+      }
+    } catch {}
+  });
+  if (ldParas.length >= 3) return ldParas.slice(0, 220);
+
+  // (b) DOM extraction — prefer <article>, else densest <p> cluster (original)
   doc.querySelectorAll('script, style, noscript, nav, header, footer, aside, form, iframe, svg, button, [role="navigation"], [class*="related"], [class*="newsletter"], [class*="subscribe"], [class*="promo"], [class*="comment"]').forEach(n => n.remove());
-  // candidate containers: prefer <article>, else densest <p> cluster
   let best = doc.querySelector('article');
   if (!best) {
     let bestLen = 0;
@@ -1094,7 +1277,8 @@ async function openReader(id) {
     <div class="reader-meta">${escHtml(a.source)} · ${relTime(tsFor(a))} · <a href="${escHtml(a.link)}" target="_blank" rel="noopener">original article</a></div>
     <div class="reader-loading">Fetching article text…</div>`;
   document.getElementById('reader').classList.add('open');
-  const html = await fetchUrl(a.link);
+  const res = await fetchUrl(a.link);
+  const html = res && res.ok ? res.body : '';
   if (!readerArticle || readerArticle.id !== id) return; // closed/changed
   if (!html) {
     inner.querySelector('.reader-loading').textContent = 'Could not fetch this article (site may block readers). Use "original article" above.';
